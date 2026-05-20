@@ -1,6 +1,6 @@
-# @tanstack/run-core
+# @tanstack/workflow-core
 
-Type-safe durable execution engine for TanStack Run.
+Type-safe durable execution engine for TanStack Workflow.
 
 Framework-agnostic core. Async-generator workflows with replay-based durability, deterministic primitives (`step`, `sleep`, `waitForSignal`, `approve`, `now`, `uuid`, `retry`, `patched`), pluggable run store, and append-only step log.
 

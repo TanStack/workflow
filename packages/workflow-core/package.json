@@ -1,22 +1,21 @@
 {
-  "name": "@tanstack/run-core",
+  "name": "@tanstack/workflow-core",
   "version": "0.0.0",
   "description": "Type-safe durable execution engine. Generator-based workflows with replay, signals, approvals, retries, and pluggable persistence.",
   "author": "Tanner Linsley",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/TanStack/run.git",
-    "directory": "packages/run-core"
+    "url": "git+https://github.com/TanStack/workflow.git",
+    "directory": "packages/workflow-core"
   },
-  "homepage": "https://tanstack.com/run",
+  "homepage": "https://tanstack.com/workflow",
   "funding": {
     "type": "github",
     "url": "https://github.com/sponsors/tannerlinsley"
   },
   "keywords": [
     "tanstack",
-    "run",
     "workflow",
     "durable-execution",
     "generator",
