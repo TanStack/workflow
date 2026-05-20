@@ -1,0 +1,67 @@
+{
+  "name": "@tanstack/react-template-devtools",
+  "version": "0.0.0",
+  "description": "React devtools for TanStack Template",
+  "author": "Tanner Linsley",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TanStack/template.git",
+    "directory": "packages/react-template-devtools"
+  },
+  "homepage": "https://tanstack.com/template",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/tannerlinsley"
+  },
+  "keywords": [
+    "react",
+    "tanstack",
+    "template",
+    "devtools"
+  ],
+  "scripts": {
+    "clean": "premove ./build ./dist",
+    "lint": "eslint ./src",
+    "test:eslint": "eslint ./src",
+    "test:lib": "vitest --passWithNoTests",
+    "test:lib:dev": "pnpm test:lib --watch",
+    "test:types": "tsc",
+    "build": "tsdown"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.cts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "dependencies": {
+    "@tanstack/template-devtools": "workspace:*"
+  },
+  "devDependencies": {
+    "@eslint-react/eslint-plugin": "^4.2.3",
+    "@types/react": "^19.2.14",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint-plugin-react-compiler": "19.1.0-rc.2",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "react": "^19.2.5",
+    "vite": "^8.0.10"
+  },
+  "peerDependencies": {
+    "react": ">=16.8",
+    "react-dom": ">=16.8"
+  }
+}

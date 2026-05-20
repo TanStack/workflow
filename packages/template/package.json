@@ -1,0 +1,58 @@
+{
+  "name": "@tanstack/template",
+  "version": "0.0.0",
+  "description": "Framework-agnostic template for TanStack libraries",
+  "author": "Tanner Linsley",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TanStack/template.git",
+    "directory": "packages/template"
+  },
+  "homepage": "https://tanstack.com/template",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/tannerlinsley"
+  },
+  "keywords": [
+    "tanstack",
+    "template",
+    "typescript"
+  ],
+  "scripts": {
+    "clean": "premove ./build ./dist",
+    "lint": "eslint ./src",
+    "lint:fix": "eslint ./src --fix",
+    "test:eslint": "eslint ./src",
+    "test:lib": "vitest",
+    "test:lib:dev": "pnpm test:lib --watch",
+    "test:types": "tsc",
+    "build": "tsdown"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.cts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./types": {
+      "import": "./dist/types.js",
+      "require": "./dist/types.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist/",
+    "src"
+  ],
+  "dependencies": {
+    "@tanstack/store": "^0.11.0"
+  }
+}

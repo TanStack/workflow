@@ -1,0 +1,87 @@
+{
+  "name": "root",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TanStack/template.git"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "type": "module",
+  "scripts": {
+    "build": "nx affected --skip-nx-cache --targets=build --exclude=examples/** && size-limit",
+    "build:all": "nx run-many --targets=build --exclude=examples/**",
+    "build:core": "nx run-many --targets=build --projects=packages/template",
+    "changeset": "changeset",
+    "changeset:publish": "changeset publish",
+    "changeset:version": "changeset version && pnpm install --no-frozen-lockfile && pnpm format",
+    "clean": "find . -name 'dist' -type d -prune -exec rm -rf {} +",
+    "clean:node_modules": "find . -name 'node_modules' -type d -prune -exec rm -rf {} +",
+    "clean:all": "pnpm run clean && pnpm run clean:node_modules",
+    "copy:readme": "cp README.md packages/template/README.md && cp README.md packages/template-devtools/README.md && cp README.md packages/react-template/README.md && cp README.md packages/react-template-devtools/README.md && cp README.md packages/solid-template/README.md && cp README.md packages/solid-template-devtools/README.md",
+    "dev": "pnpm run watch",
+    "format": "prettier --experimental-cli --ignore-unknown '**/*' --write",
+    "generate-docs": "node scripts/generate-docs.ts && pnpm run copy:readme",
+    "lint": "nx affected --target=lint --exclude=examples/**",
+    "lint:all": "pnpm run test:eslint && pnpm -r --filter \"./examples/**\" --if-present lint",
+    "lint:fix": "nx affected --target=lint:fix --exclude=examples/**",
+    "lint:fix:all": "nx run-many --targets=lint:fix",
+    "test": "pnpm run test:ci",
+    "test:ci": "pnpm run lint:all && nx run-many --targets=test:sherif,test:knip,test:docs,test:lib,test:types,build",
+    "test:docs": "node scripts/verify-links.ts",
+    "test:eslint": "nx affected --target=test:eslint --exclude=examples/**",
+    "test:knip": "knip",
+    "test:lib": "nx affected --targets=test:lib --exclude=examples/**",
+    "test:lib:dev": "pnpm test:lib && nx watch --all -- pnpm test:lib",
+    "test:pr": "pnpm run lint:all && nx affected --targets=test:sherif,test:knip,test:docs,test:lib,test:types,build",
+    "test:sherif": "sherif",
+    "test:types": "nx affected --targets=test:types --exclude=examples/**",
+    "watch": "pnpm run build:all && nx watch --all -- pnpm run build:all"
+  },
+  "nx": {
+    "includedScripts": [
+      "test:docs",
+      "test:knip",
+      "test:sherif"
+    ]
+  },
+  "size-limit": [
+    {
+      "path": "packages/template/dist/index.js",
+      "limit": "8 KB"
+    }
+  ],
+  "devDependencies": {
+    "@changesets/cli": "^2.31.0",
+    "@faker-js/faker": "^10.4.0",
+    "@size-limit/preset-small-lib": "^12.1.0",
+    "@svitejs/changesets-changelog-github-compact": "^1.2.0",
+    "@tanstack/eslint-config": "0.4.0",
+    "@tanstack/typedoc-config": "0.3.3",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@types/node": "^25.6.0",
+    "eslint": "^10.2.1",
+    "eslint-plugin-unused-imports": "^4.4.1",
+    "happy-dom": "^20.9.0",
+    "knip": "^6.6.3",
+    "markdown-link-extractor": "^4.0.3",
+    "nx": "^22.7.0",
+    "premove": "^4.0.0",
+    "prettier": "^3.8.3",
+    "prettier-plugin-svelte": "^3.5.1",
+    "publint": "^0.3.18",
+    "sherif": "^1.11.1",
+    "size-limit": "^12.1.0",
+    "tinyglobby": "^0.2.16",
+    "tsdown": "^0.21.10",
+    "typescript": "6.0.3",
+    "vitest": "^4.1.5"
+  },
+  "overrides": {
+    "@tanstack/template": "workspace:*",
+    "@tanstack/template-devtools": "workspace:*",
+    "@tanstack/react-template": "workspace:*",
+    "@tanstack/react-template-devtools": "workspace:*",
+    "@tanstack/solid-template": "workspace:*",
+    "@tanstack/solid-template-devtools": "workspace:*"
+  }
+}

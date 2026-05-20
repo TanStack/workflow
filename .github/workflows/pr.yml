@@ -1,0 +1,67 @@
+name: PR
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Setup Tools
+        uses: TanStack/config/.github/setup@main
+      - name: Get base and head commits for `nx affected`
+        uses: nrwl/nx-set-shas@v4.4.0
+        with:
+          main-branch-name: main
+      - name: Run Checks
+        run: pnpm run test:pr
+  preview:
+    name: Preview
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Setup Tools
+        uses: TanStack/config/.github/setup@main
+      - name: Build Packages
+        run: pnpm run build:all
+      - name: Publish Previews
+        run: pnpx pkg-pr-new publish --pnpm './packages/*' --template './examples/*/*'
+  provenance:
+    name: Provenance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+      - name: Check Provenance
+        uses: danielroe/provenance-action@v0.1.1
+        with:
+          fail-on-downgrade: true
+  version-preview:
+    name: Version Preview
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+      - name: Setup Tools
+        uses: TanStack/config/.github/setup@main
+      - name: Changeset Preview
+        uses: TanStack/config/.github/changeset-preview@main
