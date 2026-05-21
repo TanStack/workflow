@@ -125,14 +125,21 @@ export interface WorkflowBuilder<
    * Finalize the workflow with its handler. The handler receives the
    * fully-typed ctx — input, state, durable primitives, plus every
    * field added by registered middleware.
+   *
+   * The handler's *actual* return type narrows the workflow's
+   * `TOutput`: writing `return { orderId, reference }` makes the
+   * workflow definition carry that exact shape, no annotation needed.
+   * When `output: z.object(...)` is declared, the return type is
+   * constrained by the schema but the narrower inferred type wins for
+   * consumers of `WorkflowOutput<typeof wf>`.
    */
-  handler: (
+  handler: <TActualOutput extends InferOutput<TOutputSchema>>(
     fn: (
       ctx: Ctx<InferInput<TInputSchema>, InferState<TStateSchema>, TCtxExt>,
-    ) => Promise<InferOutput<TOutputSchema>>,
+    ) => Promise<TActualOutput>,
   ) => WorkflowDefinition<
     InferInput<TInputSchema>,
-    InferOutput<TOutputSchema>,
+    TActualOutput,
     InferState<TStateSchema>
   >
 }

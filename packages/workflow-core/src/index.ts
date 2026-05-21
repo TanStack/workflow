@@ -72,4 +72,7 @@ export type {
   WaitForEventOptions,
   WorkflowDefinition,
   WorkflowEvent,
+  WorkflowInput,
+  WorkflowOutput,
+  WorkflowState,
 } from './types'

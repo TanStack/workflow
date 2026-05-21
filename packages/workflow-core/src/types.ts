@@ -379,6 +379,26 @@ export interface WorkflowDefinition<
 export type AnyWorkflowDefinition = WorkflowDefinition<any, any, any>
 
 // ============================================================
+// Inference helpers — extract the typed shape of an existing
+// workflow for consumers (clients, tests, downstream types).
+// ============================================================
+
+export type WorkflowInput<TDefinition> =
+  TDefinition extends WorkflowDefinition<infer TInput, any, any>
+    ? TInput
+    : never
+
+export type WorkflowOutput<TDefinition> =
+  TDefinition extends WorkflowDefinition<any, infer TOutput, any>
+    ? TOutput
+    : never
+
+export type WorkflowState<TDefinition> =
+  TDefinition extends WorkflowDefinition<any, any, infer TState>
+    ? TState
+    : never
+
+// ============================================================
 // Signal delivery (used by resume calls)
 // ============================================================
 
