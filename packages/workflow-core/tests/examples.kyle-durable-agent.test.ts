@@ -152,8 +152,12 @@ function makeDurableAgent(
         throw new Error(`Tool "${action.tool}" is not in any permission list`)
       }
 
-      // 3. Run the tool durably.
-      const result = await ctx.step(`tool-${action.tool}-${i}`, () => {
+      // 3. Run the tool durably. Use an explicit `unknown` return so
+      // the function's inferred type unifies across the switch arms;
+      // each branch's `Promise<X>` would otherwise stay a distinct
+      // union member and conflict with `ctx.step`'s `T | Promise<T>`
+      // signature.
+      const result = await ctx.step<unknown>(`tool-${action.tool}-${i}`, () => {
         switch (action.tool) {
           case 'lookupManager':
             return tools.lookupManager(action.args)

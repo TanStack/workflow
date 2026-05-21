@@ -319,6 +319,23 @@ export type Ctx<
   TExtensions = unknown,
 > = BaseCtx<TInput, TState> & TExtensions
 
+/**
+ * Helper alias for typing functions that only care about middleware
+ * extensions — not the calling workflow's specific input / state
+ * shape. Common in shared utility helpers:
+ *
+ *     async function chargeUser(
+ *       ctx: WorkflowCtx<{ user: User }>,
+ *       amount: number,
+ *     ) {
+ *       return ctx.step('charge', () => stripe.charge(amount, ctx.user.id))
+ *     }
+ *
+ * For helpers that need typed `ctx.input` or `ctx.state`, use the
+ * full `Ctx<TInput, TState, TExt>` directly.
+ */
+export type WorkflowCtx<TExtensions = unknown> = Ctx<any, any, TExtensions>
+
 // ============================================================
 // Middleware
 // ============================================================

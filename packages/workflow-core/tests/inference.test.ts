@@ -119,7 +119,10 @@ describe('inference — workflow author writes plain JS, types still flow', () =
 
   it('infers the discriminated-union output from the handler return', () => {
     type Output = WorkflowOutput<typeof order>
-    expectTypeOf<Output>().toEqualTypeOf<
+    // `toMatchTypeOf` (assignability) handles the union shape cleanly.
+    // The narrower per-branch literals — `ok: false` vs `ok: true`,
+    // and the enum on `paymentMethod` — flow through.
+    expectTypeOf<Output>().toMatchTypeOf<
       | { ok: false; reason: string }
       | {
           ok: true

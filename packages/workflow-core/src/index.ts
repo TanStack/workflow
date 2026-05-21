@@ -70,6 +70,7 @@ export type {
   StepOptions,
   StepRetryOptions,
   WaitForEventOptions,
+  WorkflowCtx,
   WorkflowDefinition,
   WorkflowEvent,
   WorkflowInput,
