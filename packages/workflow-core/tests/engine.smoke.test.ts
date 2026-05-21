@@ -1,25 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import {
-  approve,
-  defineWorkflow,
-  inMemoryRunStore,
-  runWorkflow,
-  step,
-} from '../src'
+import { createWorkflow, inMemoryRunStore, runWorkflow } from '../src'
 import { collect, findRunId } from './test-utils'
 
 describe('engine smoke', () => {
   it('runs a single-step workflow end-to-end', async () => {
-    const wf = defineWorkflow({
-      name: 'echo-wf',
+    const wf = createWorkflow({
+      id: 'echo',
       input: z.object({ msg: z.string() }),
-      output: z.object({ echoed: z.string() }),
-      state: z.object({}).default({}),
-      run: async function* ({ input }) {
-        const echoed = yield* step('echo', () => input.msg.toUpperCase())
-        return { echoed }
-      },
+    }).handler(async (ctx) => {
+      const echoed = await ctx.step('echo', () => ctx.input.msg.toUpperCase())
+      return { echoed }
     })
 
     const events = await collect(
@@ -32,30 +23,28 @@ describe('engine smoke', () => {
 
     const types = events.map((e) => e.type)
     expect(types).toContain('RUN_STARTED')
-    expect(types).toContain('STATE_SNAPSHOT')
     expect(types).toContain('STEP_STARTED')
     expect(types).toContain('STEP_FINISHED')
     expect(types).toContain('RUN_FINISHED')
 
-    expect(events.find((e) => e.type === 'STEP_FINISHED')).toMatchObject({
-      content: 'HELLO',
-    })
-    expect(events.find((e) => e.type === 'RUN_FINISHED')).toMatchObject({
-      output: { echoed: 'HELLO' },
-    })
+    const finished = events.find((e) => e.type === 'RUN_FINISHED')
+    expect(finished).toMatchObject({ output: { echoed: 'HELLO' } })
+
+    const stepFinished = events.find((e) => e.type === 'STEP_FINISHED')
+    expect(stepFinished).toMatchObject({ stepId: 'echo', result: 'HELLO' })
   })
 
-  it('emits STATE_DELTA on state mutations between yields', async () => {
-    const wf = defineWorkflow({
-      name: 'state-wf',
-      input: z.object({}).default({}),
-      output: z.object({}).default({}),
+  it('emits STATE_DELTA on state mutations between primitives', async () => {
+    const wf = createWorkflow({
+      id: 'state-wf',
       state: z.object({ counter: z.number().default(0) }),
-      run: async function* ({ state }) {
-        const v = yield* step('compute', () => 42)
-        state.counter = v
-        return {}
-      },
+    }).handler(async (ctx) => {
+      const v = await ctx.step('compute', () => 42)
+      ctx.state.counter = v
+      // A second step so the delta has a flush boundary after the
+      // mutation.
+      await ctx.step('noop', () => null)
+      return {}
     })
 
     const events = await collect(
@@ -78,16 +67,12 @@ describe('engine smoke', () => {
     })
   })
 
-  it('pauses on approval — stream ends after approval-requested, RUN_FINISHED not emitted', async () => {
-    const wf = defineWorkflow({
-      name: 'approval-wf',
-      input: z.object({}).default({}),
-      output: z.object({ ok: z.boolean() }),
-      state: z.object({}).default({}),
-      run: async function* () {
-        const d = yield* approve({ title: 'go?' })
-        return { ok: d.approved }
-      },
+  it('pauses on approval — stream ends without RUN_FINISHED', async () => {
+    const wf = createWorkflow({
+      id: 'approval-wf',
+    }).handler(async (ctx) => {
+      const d = await ctx.approve({ title: 'go?' })
+      return { ok: d.approved }
     })
 
     const store = inMemoryRunStore()
@@ -100,18 +85,9 @@ describe('engine smoke', () => {
     )
 
     const types = events.map((e) => e.type)
-    expect(types).toContain('STEP_STARTED')
-    expect(
-      events.some(
-        (e) =>
-          e.type === 'CUSTOM' &&
-          (e as { name?: string }).name === 'approval-requested',
-      ),
-    ).toBe(true)
-    // Stream ended at the approval pause.
+    expect(types).toContain('APPROVAL_REQUESTED')
     expect(types).not.toContain('RUN_FINISHED')
 
-    // Verify the persisted RunState reflects the paused approval.
     const runId = findRunId(events)
     const runState = await store.getRunState(runId)
     expect(runState).toMatchObject({
@@ -121,24 +97,14 @@ describe('engine smoke', () => {
   })
 
   it('propagates a pre-aborted external signal into the step abort signal', async () => {
-    // Per the addEventListener('abort', ...) contract, listeners don't
-    // fire for the already-aborted state. The engine has to check the
-    // signal explicitly at start; otherwise `step` fns see a fresh,
-    // non-aborted signal even though the caller cancelled.
     let observedAborted: boolean | null = null
 
-    const wf = defineWorkflow({
-      name: 'pre-aborted',
-      input: z.object({}).default({}),
-      output: z.object({ ok: z.boolean() }),
-      state: z.object({}).default({}),
-      run: async function* () {
-        const r = yield* step('observe', (ctx) => {
-          observedAborted = ctx.signal.aborted
-          return { ok: true }
-        })
-        return r
-      },
+    const wf = createWorkflow({ id: 'pre-aborted' }).handler(async (ctx) => {
+      const r = await ctx.step('observe', (stepCtx) => {
+        observedAborted = stepCtx.signal.aborted
+        return { ok: true }
+      })
+      return r
     })
 
     const ac = new AbortController()
@@ -151,8 +117,7 @@ describe('engine smoke', () => {
         signal: ac.signal,
       }),
     )
-    // Without the eager-abort check, observedAborted would be false here —
-    // addEventListener never fires for an already-aborted signal.
+
     expect(observedAborted).toBe(true)
   })
 })

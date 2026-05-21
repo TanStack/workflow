@@ -1,433 +1,510 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { Operation } from './engine/state-diff'
 
-// ==========================================
+// ============================================================
 // Standard Schema helpers
-// ==========================================
+// ============================================================
 
 export type SchemaInput = StandardSchemaV1
 export type InferSchema<T> =
   T extends StandardSchemaV1<infer _, infer Out> ? Out : never
 
-// ==========================================
-// Workflow event stream
-// ==========================================
+// ============================================================
+// Serialized error (wire-safe Error)
+// ============================================================
+
+export interface SerializedError {
+  name: string
+  message: string
+  stack?: string
+}
+
+// ============================================================
+// Workflow event stream (unified log entry + transport event)
+// ============================================================
 
 /**
- * Discriminated union emitted by `runWorkflow` for downstream consumers
- * (HTTP/SSE handlers, devtools, in-process listeners). Designed to be
- * a structural superset of AG-UI's RUN, STEP, and STATE event shapes
- * so higher layers (e.g. `@tanstack/ai-orchestration`) can adapt these
- * to AG-UI without translation.
+ * The shape of every event the engine appends to a run's log.
+ *
+ * Two consumers, one shape:
+ *
+ *   - **Durability**: the engine appends events to the run's log.
+ *     Replay reads the log and short-circuits primitives that have
+ *     a matching CHECKPOINT event by `stepId`.
+ *   - **Observability**: the engine emits the same events through
+ *     `runWorkflow`'s `AsyncIterable<WorkflowEvent>` and (if wired)
+ *     through stream subscribers. A browser/UI subscribes to the
+ *     same log a Durable Streams URL would expose.
+ *
+ * Events fall into two categories internally:
+ *
+ *   - **Checkpoint events** — replay uses these to skip already-
+ *     completed work. Indexed by `stepId`. STEP_FINISHED,
+ *     STEP_FAILED, SIGNAL_RESOLVED, APPROVAL_RESOLVED, NOW_RECORDED,
+ *     UUID_RECORDED, RUN_FINISHED, RUN_ERRORED.
+ *
+ *   - **Observability events** — engine emits but replay ignores.
+ *     RUN_STARTED, STEP_STARTED, SIGNAL_AWAITED, APPROVAL_REQUESTED,
+ *     STATE_DELTA, CUSTOM.
+ *
+ * The optional `audience` field is engine-ignored. Adapters/views
+ * (e.g., a Durable Streams projection layer) may filter on it to
+ * produce internal vs client vs admin views of the same log.
  */
 export type WorkflowEvent =
+  // ── Run lifecycle ─────────────────────────────────────────────
   | {
       type: 'RUN_STARTED'
-      timestamp: number
+      ts: number
       runId: string
-      threadId: string
+      threadId?: string
+      audience?: string
     }
   | {
       type: 'RUN_FINISHED'
-      timestamp: number
+      ts: number
       runId: string
-      threadId: string
-      output?: unknown
+      output: unknown
+      audience?: string
     }
   | {
-      type: 'RUN_ERROR'
-      timestamp: number
+      type: 'RUN_ERRORED'
+      ts: number
       runId: string
-      threadId: string
-      message: string
+      error: SerializedError
       code: string
+      audience?: string
     }
+  // ── Step (durable side-effect via ctx.step) ────────────────────
   | {
       type: 'STEP_STARTED'
-      timestamp: number
+      ts: number
       stepId: string
-      stepName: string
-      stepType?: StepKind
+      audience?: string
     }
   | {
       type: 'STEP_FINISHED'
-      timestamp: number
+      ts: number
       stepId: string
-      stepName: string
-      content?: unknown
+      result: unknown
+      attempts?: ReadonlyArray<StepAttempt>
+      audience?: string
     }
-  | { type: 'STATE_SNAPSHOT'; timestamp: number; snapshot: unknown }
-  | { type: 'STATE_DELTA'; timestamp: number; delta: Array<Operation> }
+  | {
+      type: 'STEP_FAILED'
+      ts: number
+      stepId: string
+      error: SerializedError
+      attempts?: ReadonlyArray<StepAttempt>
+      audience?: string
+    }
+  // ── Signal (ctx.waitForEvent, ctx.sleep) ──────────────────────
+  | {
+      type: 'SIGNAL_AWAITED'
+      ts: number
+      stepId: string
+      name: string
+      deadline?: number
+      meta?: Record<string, unknown>
+      audience?: string
+    }
+  | {
+      type: 'SIGNAL_RESOLVED'
+      ts: number
+      stepId: string
+      name: string
+      /** Host-supplied idempotency token. Same `signalId` at the
+       *  same `stepId` is a no-op (idempotent retry); different
+       *  `signalId` is a lost race. */
+      signalId?: string
+      payload: unknown
+      audience?: string
+    }
+  // ── Approval (ctx.approve) ────────────────────────────────────
+  | {
+      type: 'APPROVAL_REQUESTED'
+      ts: number
+      stepId: string
+      approvalId: string
+      title: string
+      description?: string
+      audience?: string
+    }
+  | {
+      type: 'APPROVAL_RESOLVED'
+      ts: number
+      stepId: string
+      approvalId: string
+      approved: boolean
+      feedback?: string
+      audience?: string
+    }
+  // ── Deterministic recording (ctx.now, ctx.uuid) ────────────────
+  | {
+      type: 'NOW_RECORDED'
+      ts: number
+      stepId: string
+      value: number
+      audience?: string
+    }
+  | {
+      type: 'UUID_RECORDED'
+      ts: number
+      stepId: string
+      value: string
+      audience?: string
+    }
+  // ── State + custom ────────────────────────────────────────────
+  | {
+      type: 'STATE_DELTA'
+      ts: number
+      delta: ReadonlyArray<Operation>
+      audience?: string
+    }
   | {
       type: 'CUSTOM'
-      timestamp: number
+      ts: number
       name: string
       value: Record<string, unknown>
+      audience?: string
     }
 
-// ==========================================
-// Workflow definition
-// ==========================================
+/** Kinds that replay treats as completion checkpoints (engine reads
+ *  these from the log to short-circuit primitives). All others are
+ *  observability-only. */
+export type CheckpointEvent = Extract<
+  WorkflowEvent,
+  {
+    type:
+      | 'STEP_FINISHED'
+      | 'STEP_FAILED'
+      | 'SIGNAL_RESOLVED'
+      | 'APPROVAL_RESOLVED'
+      | 'NOW_RECORDED'
+      | 'UUID_RECORDED'
+      | 'RUN_FINISHED'
+      | 'RUN_ERRORED'
+  }
+>
 
-export type WorkflowRunArgs<TInput, TState> = {
-  input: TInput
-  state: TState
-  emit: EmitFn
-  signal: AbortSignal
-}
-
-export interface WorkflowDefinition<
-  TInputSchema extends SchemaInput | undefined,
-  TOutputSchema extends SchemaInput | undefined,
-  TStateSchema extends SchemaInput | undefined,
-> {
-  __kind: 'workflow'
-  name: string
-  description?: string
-  /**
-   * Caller-supplied version identifier. Hosts running multiple
-   * workflow versions side-by-side use this with
-   * `selectWorkflowVersion` to route resume calls to the version a
-   * given run was started under.
-   */
-  version?: string
-  inputSchema?: TInputSchema
-  outputSchema?: TOutputSchema
-  stateSchema?: TStateSchema
-  /**
-   * Migration patch list. Each entry is a string name that user code
-   * gates on via `yield* patched(name)`. Declaring `patches` switches
-   * this workflow into the lighter "patch-versioned" fingerprint
-   * mode: code-body changes no longer trigger
-   * `workflow_version_mismatch`; instead the engine checks that the
-   * run's recorded patches are a subset of the current workflow's
-   * patches. Workflows without `patches` get the strict source-hash
-   * fingerprint (unchanged).
-   *
-   * Note: this primitive is slated for deprecation in favor of
-   * explicit versioning (`version` + a planned `previousVersions`
-   * registry). See the project design docs.
-   */
-  patches?: ReadonlyArray<string>
-  initialize?: (args: {
-    input: TInputSchema extends SchemaInput
-      ? InferSchema<TInputSchema>
-      : unknown
-  }) => TStateSchema extends SchemaInput
-    ? Partial<InferSchema<TStateSchema>>
-    : Record<string, unknown>
-  /** Fallback retry policy for `step()` calls that don't carry their
-   *  own `{ retry }` option. */
-  defaultStepRetry?: StepRetryOptions
-  run: (
-    args: WorkflowRunArgs<
-      TInputSchema extends SchemaInput ? InferSchema<TInputSchema> : unknown,
-      TStateSchema extends SchemaInput
-        ? InferSchema<TStateSchema>
-        : Record<string, unknown>
-    >,
-  ) => AsyncGenerator<
-    StepDescriptor,
-    TOutputSchema extends SchemaInput ? InferSchema<TOutputSchema> : unknown,
-    unknown
-  >
-}
-
-export type AnyWorkflowDefinition = WorkflowDefinition<any, any, any>
-
-// ==========================================
-// Step descriptors
-// ==========================================
-
-/** Context handed to a `step()` function. The deterministic `id` is the
- *  one to use as an idempotency key against external systems — it stays
- *  the same across replays of the same step, so e.g. a retried
- *  `step('charge', ctx => stripe.charges.create({...}, {idempotencyKey: ctx.id}))`
- *  won't double-charge if the engine replays the step. */
-export interface StepContext {
-  /** Deterministic step ID. Stable across replays. */
-  id: string
-  /** Current attempt number (1-indexed). Useful for retry-aware step
-   *  fns that want to e.g. widen a timeout on later attempts. */
-  attempt: number
-  /**
-   * Per-attempt AbortSignal. Aborts when:
-   *   - the step's `timeout` (if any) elapses for the current attempt
-   *   - the run as a whole is aborted (Ctrl+C / external cancellation)
-   * Wire it into your fetch/axios/db client so timeouts and run-level
-   * cancels actually halt the in-flight work instead of letting it
-   * burn through.
-   */
-  signal: AbortSignal
-}
+// ============================================================
+// Step context (per-attempt scope inside ctx.step's fn)
+// ============================================================
 
 /**
- * Per-step retry policy. When set on a `step()` call (or via the
- * workflow's `defaultStepRetry`), the engine retries the step's `fn`
- * until it succeeds or `maxAttempts` is exhausted. Backoff between
- * attempts uses an in-process timer — durable across yields but not
- * across process restart, an acceptable v1 limitation.
+ * Passed to a `ctx.step()` function. The deterministic `id` is the
+ * idempotency-key candidate for external systems — it stays the same
+ * across retries within a single step's execution AND across replays
+ * of the same run.
  */
+export interface StepContext {
+  /** Deterministic step ID. Stable across retries and replays. */
+  id: string
+  /** Current attempt number (1-indexed). */
+  attempt: number
+  /** Per-attempt AbortSignal. Fires on:
+   *   - step timeout firing
+   *   - run-level abort (Ctrl+C / external cancellation) */
+  signal: AbortSignal
+}
+
 export interface StepRetryOptions {
   /** Maximum total attempts including the first try. Must be >= 1. */
   maxAttempts: number
-  /**
-   * Backoff strategy between attempts.
-   *   - `'exponential'`  — `baseMs * 2^(attempt-1)` ms.
-   *   - `'fixed'`        — always `baseMs`.
-   *   - `(attempt) => ms` — custom function.
-   * Default: `'exponential'`.
-   */
+  /** Backoff between attempts. Default: 'exponential'. */
   backoff?: 'exponential' | 'fixed' | ((attempt: number) => number)
   /** Base delay in ms for built-in backoff strategies. Default: 500. */
   baseMs?: number
-  /**
-   * Predicate to decide whether a given error should be retried. If
-   * absent, every thrown error is retried until attempts are
-   * exhausted. Return `false` to abort retries early.
-   */
+  /** Predicate to decide whether a given error should be retried.
+   *  Default: retry every error. */
   shouldRetry?: (err: unknown, attempt: number) => boolean
 }
 
-export type StepDescriptor =
-  | {
-      kind: 'nested-workflow'
-      name: string
-      input: unknown
-      workflow: AnyWorkflowDefinition
-    }
-  | { kind: 'approval'; title: string; description?: string }
-  | {
-      kind: 'step'
-      name: string
-      fn: (ctx: StepContext) => unknown | Promise<unknown>
-      retry?: StepRetryOptions
-      /** Per-attempt timeout in ms. A timeout surfaces as a
-       *  `StepTimeoutError` thrown from the yield. Use the retry
-       *  policy's `shouldRetry` to decide whether timeouts should
-       *  retry — by default they do, up to `maxAttempts`. */
-      timeout?: number
-    }
-  | { kind: 'now' }
-  | { kind: 'uuid' }
-  | {
-      /** Temporal-style mid-flight migration flag. Returns `true` for
-       *  runs that were started under a workflow version that declared
-       *  this patch, `false` for runs started before the patch was
-       *  added. */
-      kind: 'patched'
-      name: string
-    }
-  | {
-      /** Generic durable pause: the run yields a named signal, the
-       *  engine persists `waitingFor`, the event stream closes, and the
-       *  host resumes the run by delivering a payload for `name`.
-       *  Sleep/sleepUntil are built on this with the reserved name
-       *  `'__timer'`; user-defined waits use plain names. */
-      kind: 'signal'
-      name: string
-      /** Wake deadline in UTC ms. Surfaced on
-       *  `waitingFor.deadline` so hosts can build time-driven indexes
-       *  (cron, scheduled jobs) over the persisted state. */
-      deadline?: number
-      /** Free-form metadata the host or UI may render. Opaque to the
-       *  engine. */
-      meta?: Record<string, unknown>
-    }
+export interface StepOptions {
+  retry?: StepRetryOptions
+  /** Per-attempt timeout in ms. */
+  timeout?: number
+}
 
-// TNext is `any` so a generator with TReturn=A can `yield*` another generator
-// with TReturn=B without TS rejecting the delegation. The engine sends the
-// correct typed value back at each yield boundary; the type of the value is
-// determined by the inner generator (e.g., `step(...)` returns a step result,
-// `approve(...)` returns an `ApprovalResult`).
-export type StepGenerator<T> = Generator<StepDescriptor, T, any>
+export interface StepAttempt {
+  startedAt: number
+  finishedAt: number
+  result?: unknown
+  error?: SerializedError
+}
 
-// ==========================================
-// Approval result
-// ==========================================
+// ============================================================
+// Wait-for-event / approve options
+// ============================================================
+
+export interface WaitForEventOptions<TPayload = unknown> {
+  /** UTC ms wake deadline. Surfaced on `RunState.waitingFor.deadline`
+   *  so hosts can build time-indexed worker jobs. */
+  deadline?: number
+  /** Free-form metadata the host or UI may render. */
+  meta?: Record<string, unknown>
+  /** Optional schema for validating the incoming payload before
+   *  resuming the workflow. */
+  schema?: StandardSchemaV1<unknown, TPayload>
+}
+
+export interface ApproveOptions {
+  title: string
+  description?: string
+}
 
 export interface ApprovalResult {
   approved: boolean
   approvalId: string
-  /** Optional free-text feedback. Set when the user denies and asks for revisions. */
   feedback?: string
 }
 
-// ==========================================
-// Emit
-// ==========================================
+// ============================================================
+// Ctx — the single argument to every workflow handler
+// ============================================================
 
-export type EmitFn = (name: string, value: Record<string, unknown>) => void
-
-// ==========================================
-// Run state
-// ==========================================
-
-export type RunStatus = 'running' | 'paused' | 'finished' | 'error' | 'aborted'
-
-export interface RunState<
-  TInput = unknown,
-  TState = unknown,
-  TOutput = unknown,
-> {
+/** Built-in fields on every ctx. Middleware can add fields via the
+ *  `TExtensions` generic but cannot shadow these. */
+export interface BaseCtx<TInput, TState> {
   runId: string
-  status: RunStatus
-  workflowName: string
-  /**
-   * Caller-supplied version identifier (e.g. 'v1', '2026-05-15') copied
-   * from the workflow definition at run start.
-   */
-  workflowVersion?: string
-  /**
-   * Stable hash of the workflow's source. Computed once at run start,
-   * persisted with state, and compared on every replay-from-store
-   * resume. A mismatch refuses resume with `RUN_ERROR { code:
-   * 'workflow_version_mismatch' }` rather than blindly driving a fresh
-   * generator through a log whose positional indices may not line up.
-   *
-   * Slated for replacement by explicit `previousVersions` routing in a
-   * subsequent design pass.
-   */
-  fingerprint?: string
-  /**
-   * Patches the workflow declared at the moment this run was started.
-   * `yield* patched(name)` returns `startingPatches.includes(name)`.
-   * Persisted so the answer stays stable across replays.
-   */
-  startingPatches?: ReadonlyArray<string>
   input: TInput
   state: TState
+  /** AbortSignal for the run as a whole. */
+  signal: AbortSignal
+
+  // ── Durable primitives (replay-aware) ────────────────────────
+  step: <T>(
+    id: string,
+    fn: (stepCtx: StepContext) => T | Promise<T>,
+    options?: StepOptions,
+  ) => Promise<T>
+  sleep: (ms: number) => Promise<void>
+  sleepUntil: (timestamp: number) => Promise<void>
+  waitForEvent: <TPayload = unknown>(
+    name: string,
+    options?: WaitForEventOptions<TPayload>,
+  ) => Promise<TPayload>
+  approve: (options: ApproveOptions) => Promise<ApprovalResult>
+  now: () => Promise<number>
+  uuid: () => Promise<string>
+
+  // ── Observability ─────────────────────────────────────────────
+  /** Emit a CUSTOM event for UI/devtools consumption. Does not enter
+   *  the replay log. */
+  emit: (name: string, value: Record<string, unknown>) => void
+}
+
+/** Reserved field names that middleware may not override. */
+export type ReservedCtxFields =
+  | 'runId'
+  | 'input'
+  | 'state'
+  | 'signal'
+  | 'step'
+  | 'sleep'
+  | 'sleepUntil'
+  | 'waitForEvent'
+  | 'approve'
+  | 'now'
+  | 'uuid'
+  | 'emit'
+
+/** Full ctx type passed to a handler, including middleware-added
+ *  fields. `TExtensions` defaults to `unknown` so the empty-middleware
+ *  case collapses cleanly under intersection
+ *  (`unknown & BaseCtx === BaseCtx`). */
+export type Ctx<
+  TInput = unknown,
+  TState = Record<string, unknown>,
+  TExtensions = unknown,
+> = BaseCtx<TInput, TState> & TExtensions
+
+// ============================================================
+// Middleware
+// ============================================================
+
+/**
+ * A middleware extends the ctx for downstream middleware + the
+ * handler. The function receives the *current* `ctx` and a `next`
+ * callable taking `{ context: TExtension }` — the literal `context`
+ * field is what TypeScript anchors on to infer `TExtension` from the
+ * call site.
+ *
+ *     const requireUser = createMiddleware().server(async ({ ctx, next }) => {
+ *       const user = await loadUser()
+ *       return next({ context: { user } })
+ *       // downstream ctx is now `prev & { user: User }`
+ *     })
+ */
+export type MiddlewareServerFn<TCtxIn, TExtension> = (args: {
+  ctx: TCtxIn
+  next: (opts: { context: TExtension }) => Promise<unknown>
+}) => Promise<unknown>
+
+export interface Middleware<TCtxIn = unknown, TExtension = unknown> {
+  __kind: 'middleware'
+  server: MiddlewareServerFn<TCtxIn, TExtension>
+}
+
+export type AnyMiddleware = Middleware<any, any>
+
+// ============================================================
+// Workflow definition
+// ============================================================
+
+export interface WorkflowDefinition<
+  TInput = unknown,
+  TOutput = unknown,
+  TState = Record<string, unknown>,
+> {
+  __kind: 'workflow'
+  id: string
+  description?: string
+  /** Caller-supplied version identifier. Used with `previousVersions`
+   *  and `selectWorkflowVersion` for cross-version routing. */
+  version?: string
+  /** Older versions of this workflow that may still have in-flight
+   *  runs. The engine routes a run's resume call to the version whose
+   *  identifier matches the run's persisted `workflowVersion`. */
+  previousVersions?: ReadonlyArray<WorkflowDefinition<any, any, any>>
+  inputSchema?: SchemaInput
+  outputSchema?: SchemaInput
+  stateSchema?: SchemaInput
+  initialize?: (args: { input: TInput }) => Partial<TState>
+  defaultStepRetry?: StepRetryOptions
+  middlewares: ReadonlyArray<AnyMiddleware>
+  handler: (ctx: Ctx<TInput, TState, any>) => Promise<TOutput>
+}
+
+export type AnyWorkflowDefinition = WorkflowDefinition<any, any, any>
+
+// ============================================================
+// Signal delivery (used by resume calls)
+// ============================================================
+
+export interface SignalDelivery<TPayload = unknown> {
+  /** Idempotency token. Same signalId at the same stepId = no-op
+   *  retry; different signalId = lost race. */
+  signalId: string
+  /** Name of the awaited signal (the same name passed to
+   *  `ctx.waitForEvent(name, ...)`). */
+  name: string
+  payload: TPayload
+}
+
+// ============================================================
+// Run state (persistence shape — minimal; state itself is derived)
+// ============================================================
+
+export type RunStatus =
+  | 'running'
+  | 'paused'
+  | 'finished'
+  | 'errored'
+  | 'aborted'
+
+/**
+ * Persisted run metadata. State is intentionally NOT stored here —
+ * it is reconstructed from `initialize(input)` + log replay on every
+ * resume. The store only persists what's needed to route, resume,
+ * and audit a run.
+ */
+export interface RunState<TInput = unknown, TOutput = unknown> {
+  runId: string
+  status: RunStatus
+  workflowId: string
+  workflowVersion?: string
+  input: TInput
   output?: TOutput
-  error?: { name: string; message: string; stack?: string }
-  pendingApproval?: { approvalId: string; title: string; description?: string }
-  /**
-   * Signal-pause descriptor — set when the engine pauses on a
-   * `waitForSignal`. An out-of-process worker (cron, message-bus
-   * consumer) can independently discover the pending wake by querying
-   * the store. Hosts typically build indexes on
-   * `(waitingFor.signalName, waitingFor.deadline)` for time-driven and
-   * signal-driven wake jobs respectively.
-   */
+  error?: SerializedError
+  /** Set when the run is paused awaiting an external signal. */
   waitingFor?: {
     signalName: string
     deadline?: number
     meta?: Record<string, unknown>
   }
+  /** Set when the run is paused awaiting an approval. */
+  pendingApproval?: {
+    approvalId: string
+    title: string
+    description?: string
+  }
   createdAt: number
   updatedAt: number
 }
 
-/**
- * Delivered to a paused signal-wait. The `signalId` is the host's
- * idempotency token for this delivery — the engine persists it on the
- * resulting step record and dedupes duplicate deliveries (same
- * signalId, same step index) by returning the recorded payload.
- */
-export interface SignalResult<TPayload = unknown> {
-  signalId: string
-  payload: TPayload
-}
+// ============================================================
+// RunStore — backing storage (state + append-only log + CAS)
+// ============================================================
 
-// ==========================================
-// Step log
-// ==========================================
+export type DeleteReason = 'finished' | 'errored' | 'aborted'
 
 /**
- * Discriminator for entries in a run's step log. The engine appends one
- * StepRecord per checkpoint boundary in the workflow. Replay short-
- * circuits each yield by reading the recorded record at the matching
- * positional index. Adapter authors persisting this enum should treat
- * unknown kinds as opaque (forward-compat for primitives added in later
- * releases, or for kinds introduced by packages that build on top of
- * the core engine).
- */
-export type StepKind =
-  | 'step'
-  | 'approval'
-  | 'nested-workflow'
-  | 'now'
-  | 'uuid'
-  | 'patched'
-  | 'signal'
-
-/** One attempt of a step, including retries. The terminal attempt is the
- *  one whose result/error becomes the StepRecord's result/error. */
-export interface StepAttempt {
-  startedAt: number
-  finishedAt: number
-  /** Set when the attempt succeeded. */
-  result?: unknown
-  /** Set when the attempt threw. */
-  error?: { name: string; message: string; stack?: string }
-}
-
-/**
- * Persisted record of a single checkpoint in a run. Append-only — once
- * written at a given (runId, index) it must not be mutated. Step results
- * are the authoritative truth for replay; if state diverges from what
- * replaying the log would produce, log wins.
- */
-export interface StepRecord {
-  /** Positional index in the run's log, starting at 0. */
-  index: number
-  /** What kind of step produced this record. */
-  kind: StepKind
-  /** Step identity used for UI / debugging: `step()` name, signal
-   *  name, etc. */
-  name: string
-  /**
-   * Producer ID — populated for entries created from external signals
-   * (approval, generic signal). Engine uses it to dedupe idempotent
-   * retries of the same signal delivery: a second `appendStep` call
-   * with the same `signalId` at the same index returns the existing
-   * record instead of throwing LogConflictError.
-   */
-  signalId?: string
-  /** Set when the step succeeded. `undefined` for void-returning kinds. */
-  result?: unknown
-  /** Set when the step failed and user code did not catch the throw. */
-  error?: { name: string; message: string; stack?: string }
-  startedAt: number
-  finishedAt?: number
-  /** Recorded per-attempt detail for steps with a retry policy. The
-   *  terminal entry's outcome lives on `result` / `error`. */
-  attempts?: ReadonlyArray<StepAttempt>
-}
-
-/**
- * Thrown when a `step()` with `{ timeout }` exceeds its wall-clock
- * budget on a given attempt. Subject to the retry policy.
- */
-export class StepTimeoutError extends Error {
-  override readonly name = 'StepTimeoutError'
-  constructor(
-    public readonly stepName: string,
-    public readonly timeoutMs: number,
-  ) {
-    super(`Step "${stepName}" exceeded ${timeoutMs}ms timeout.`)
-  }
-}
-
-/**
- * Thrown by `RunStore.appendStep` when another writer has already
- * committed a record at the requested index. The engine catches it,
- * re-reads the log, and either:
- *  - returns the conflicting record (idempotent — same signalId means
- *    it was a retry of the same delivery), or
- *  - surfaces `RUN_ERROR { code: 'signal_lost', winner }` (a genuinely
- *    different writer won the race).
+ * Pluggable backing store for workflow runs.
  *
- * Store implementations must throw this exact class so the engine can
- * distinguish CAS failure from other store errors.
+ * Two surfaces:
+ *
+ *   - **State** (`getRunState` / `setRunState` / `deleteRun`) —
+ *     low-frequency metadata writes (status, output, pause info).
+ *     State the user mutates inside the handler is NOT persisted
+ *     here; it's reconstructed from log replay.
+ *
+ *   - **Event log** (`appendEvent` / `getEvents`) — append-only
+ *     with optimistic CAS on `expectedNextIndex`. Each entry is a
+ *     `WorkflowEvent`. Used for both replay (engine reads
+ *     checkpoint events back) and transport (UI subscribers tail
+ *     the log).
+ *
+ * Stores that support push-based subscription (in-memory, Redis
+ * pub/sub, Postgres LISTEN/NOTIFY, Durable Streams) should
+ * implement `subscribe` so callers can tail a run live without
+ * polling.
+ */
+export interface RunStore {
+  // ── State (metadata snapshot) ──────────────────────────────────
+  getRunState: (runId: string) => Promise<RunState | undefined>
+  setRunState: (runId: string, state: RunState) => Promise<void>
+  deleteRun: (runId: string, reason: DeleteReason) => Promise<void>
+
+  // ── Event log (append-only, CAS) ──────────────────────────────
+  /** Append `event` at `expectedNextIndex`. Throws `LogConflictError`
+   *  if another writer has already committed at that index. Must be
+   *  atomic. */
+  appendEvent: (
+    runId: string,
+    expectedNextIndex: number,
+    event: WorkflowEvent,
+  ) => Promise<void>
+  /** Read every event for `runId`, ordered by append position. */
+  getEvents: (runId: string) => Promise<ReadonlyArray<WorkflowEvent>>
+
+  // ── Optional subscription (push-based tailing) ────────────────
+  /** Subscribe to new events for `runId`. Returns an unsubscribe
+   *  function. Stores without push support omit this and callers
+   *  fall back to polling `getEvents`. */
+  subscribe?: (
+    runId: string,
+    fromIndex: number,
+    onEvent: (event: WorkflowEvent, index: number) => void,
+  ) => () => void
+}
+
+// ============================================================
+// Errors
+// ============================================================
+
+/**
+ * Thrown by `RunStore.appendEvent` when another writer has already
+ * committed a record at the requested index. The engine catches it
+ * and decides whether to treat as idempotent (same signalId) or as
+ * a lost race (different signalId).
  */
 export class LogConflictError extends Error {
   override readonly name = 'LogConflictError'
   constructor(
     public readonly runId: string,
     public readonly attemptedIndex: number,
-    /** The record already at that index, if the store can cheaply
-     *  surface it. */
-    public readonly existing?: StepRecord,
+    public readonly existing?: WorkflowEvent,
   ) {
     super(
       `Log conflict for run ${runId} at index ${attemptedIndex}: another writer has already committed.`,
@@ -435,72 +512,24 @@ export class LogConflictError extends Error {
   }
 }
 
-// ==========================================
-// RunStore
-// ==========================================
-
-export type DeleteReason = 'finished' | 'error' | 'aborted'
-
-/**
- * Pluggable backing store for workflow runs.
- *
- * Two concerns, kept deliberately separate:
- *
- * - **State** (`getRunState` / `setRunState` / `deleteRun`) is the
- *   *materialized view*. Holds the current snapshot — status, input,
- *   user-defined state, output, error, pause info. Written on each
- *   meaningful transition. Low frequency, snapshot writes. If state is
- *   missing or torn after a crash, the engine reconstructs it by
- *   replaying the log.
- *
- * - **Step log** (`appendStep` / `getSteps`) is the *authoritative
- *   source of truth*. Append-only. Each entry records one checkpoint
- *   boundary in the run.
- *
- * `appendStep` is optimistic-CAS: writers pass `expectedNextIndex`, and
- * the store must reject the append (by throwing `LogConflictError`) if
- * a record already exists at that index. The conditional check and the
- * insert must be a single atomic operation on the backing system
- * (Postgres `INSERT ... WHERE NOT EXISTS`, DynamoDB
- * `ConditionExpression`, Redis `WATCH`/multi, etc.). Backends that
- * can't enforce atomic CAS are unsuitable for multi-instance
- * deployments.
- *
- * No transactional contract is required *between* state and log writes —
- * the engine writes log entries before any state mutation that depends
- * on them, and replay guarantees state correctness from the log alone.
- */
-export interface RunStore {
-  // ── state (snapshot) ───────────────────────────────────────────────
-  getRunState: (runId: string) => Promise<RunState | undefined>
-  setRunState: (runId: string, state: RunState) => Promise<void>
-  deleteRun: (runId: string, reason: DeleteReason) => Promise<void>
-
-  // ── step log (append-only, CAS) ────────────────────────────────────
-  /**
-   * Append `record` at `expectedNextIndex`. Throws `LogConflictError`
-   * if another writer has already committed at that index. Must be
-   * atomic.
-   */
-  appendStep: (
-    runId: string,
-    expectedNextIndex: number,
-    record: StepRecord,
-  ) => Promise<void>
-  /** Read every record for `runId`, ordered by `index` ascending. */
-  getSteps: (runId: string) => Promise<ReadonlyArray<StepRecord>>
+/** Thrown when a `ctx.step()` with `{ timeout }` exceeds its
+ *  wall-clock budget on a given attempt. */
+export class StepTimeoutError extends Error {
+  override readonly name = 'StepTimeoutError'
+  constructor(
+    public readonly stepId: string,
+    public readonly timeoutMs: number,
+  ) {
+    super(`Step "${stepId}" exceeded ${timeoutMs}ms timeout.`)
+  }
 }
 
-// ==========================================
-// Engine-internal: live (non-serializable) run handle
-// ==========================================
-export interface LiveRun {
-  runState: RunState
-  generator: AsyncGenerator<StepDescriptor, unknown, unknown>
-  abortController: AbortController
-  approvalResolver?: (result: ApprovalResult) => void
-  pendingEvents: Array<WorkflowEvent>
-  /** Step ID of the currently paused approval/signal, if any. Used to
-   *  emit STEP_FINISHED on resume. */
-  pendingApprovalStepId?: string
+/** Internal sentinel: thrown by a paused primitive to unwind the
+ *  handler stack. The engine catches it and marks the run as
+ *  paused. User code should not catch this. */
+export class WorkflowPaused extends Error {
+  override readonly name = 'WorkflowPaused'
+  constructor() {
+    super('Workflow paused — this error is for engine use only.')
+  }
 }

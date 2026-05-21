@@ -33,58 +33,59 @@ describe('parseWorkflowRequest', () => {
   })
 
   it('drops `approval` when `signal` is also present (signal wins)', async () => {
-    // Documented precedence: when both fields arrive, `signalDelivery`
-    // takes precedence and `approval` is normalized to undefined so
-    // downstream code never has to disambiguate.
     const req = mkRequest(
       JSON.stringify({
         runId: 'r1',
         approval: { approvalId: 'a1', approved: true },
-        signal: { signalId: 's1', payload: { ok: true } },
+        signal: { signalId: 's1', name: 'approve', payload: { ok: true } },
       }),
     )
     const params = await parseWorkflowRequest(req)
     expect(params.approval).toBeUndefined()
     expect(params.signalDelivery).toEqual({
       signalId: 's1',
+      name: 'approve',
       payload: { ok: true },
     })
   })
 
   it('renames the wire field `signal` to `signalDelivery`', async () => {
     const req = mkRequest(
-      JSON.stringify({ runId: 'r1', signal: { signalId: 's', payload: 1 } }),
+      JSON.stringify({
+        runId: 'r1',
+        signal: { signalId: 's', name: 'evt', payload: 1 },
+      }),
     )
     const params = await parseWorkflowRequest(req)
-    expect(params.signalDelivery).toEqual({ signalId: 's', payload: 1 })
+    expect(params.signalDelivery).toEqual({
+      signalId: 's',
+      name: 'evt',
+      payload: 1,
+    })
     expect((params as { signal?: unknown }).signal).toBeUndefined()
   })
 
   it('throws WorkflowRequestParseError on malformed JSON', async () => {
-    const req = mkRequest('{not valid json}')
-    await expect(parseWorkflowRequest(req)).rejects.toBeInstanceOf(
-      WorkflowRequestParseError,
-    )
+    await expect(
+      parseWorkflowRequest(mkRequest('{not valid json}')),
+    ).rejects.toBeInstanceOf(WorkflowRequestParseError)
   })
 
-  it('throws WorkflowRequestParseError when body is a JSON string (not an object)', async () => {
-    const req = mkRequest(JSON.stringify('hello'))
-    await expect(parseWorkflowRequest(req)).rejects.toBeInstanceOf(
-      WorkflowRequestParseError,
-    )
+  it('throws WorkflowRequestParseError when body is a JSON string', async () => {
+    await expect(
+      parseWorkflowRequest(mkRequest(JSON.stringify('hello'))),
+    ).rejects.toBeInstanceOf(WorkflowRequestParseError)
   })
 
   it('throws WorkflowRequestParseError when body is a JSON array', async () => {
-    const req = mkRequest(JSON.stringify([1, 2, 3]))
-    await expect(parseWorkflowRequest(req)).rejects.toBeInstanceOf(
-      WorkflowRequestParseError,
-    )
+    await expect(
+      parseWorkflowRequest(mkRequest(JSON.stringify([1, 2, 3]))),
+    ).rejects.toBeInstanceOf(WorkflowRequestParseError)
   })
 
   it('preserves the parse cause on WorkflowRequestParseError', async () => {
-    const req = mkRequest('{bad}')
     try {
-      await parseWorkflowRequest(req)
+      await parseWorkflowRequest(mkRequest('{bad}'))
       throw new Error('should have thrown')
     } catch (err) {
       expect(err).toBeInstanceOf(WorkflowRequestParseError)

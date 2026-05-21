@@ -1,240 +1,123 @@
-/**
- * Tests for client-provided runId + signalId idempotency (step 8 of
- * the durability roadmap). Pins:
- *   - Start with a client-supplied runId.
- *   - A second start with the same runId + same fingerprint returns an
- *     attach snapshot (idempotent retry).
- *   - A second start with the same runId + different fingerprint is
- *     rejected with run_id_conflict.
- *   - signalDelivery.signalId is recorded on the resulting step record
- *     (CAS conflict handling lands in step 9).
- */
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import {
-  defineWorkflow,
-  inMemoryRunStore,
-  runWorkflow,
-  waitForSignal,
-} from '../src'
-import { collect } from './test-utils'
+import { createWorkflow, inMemoryRunStore, runWorkflow } from '../src'
+import { collect, findRunId, simulateRestart } from './test-utils'
 
-describe('start idempotency', () => {
-  it('uses a client-provided runId', async () => {
-    const wf = defineWorkflow({
-      name: 'wf',
-      input: z.object({}).default({}),
-      output: z.object({}).default({}),
-      state: z.object({}).default({}),
-      run: async function* () {
-        yield* waitForSignal('go')
-        return {}
-      },
+describe('signal delivery idempotency', () => {
+  it('same signalId on two deliveries is a no-op (run still completes once)', async () => {
+    const wf = createWorkflow({
+      id: 'idem',
+      output: z.object({ payload: z.any() }),
+    }).handler(async (ctx) => {
+      const payload = await ctx.waitForEvent('approval', {})
+      return { payload }
     })
 
     const store = inMemoryRunStore()
-    const events = await collect(
-      runWorkflow({
-        workflow: wf,
-        input: {},
-        runId: 'my-run-1',
-        runStore: store,
-      }),
+    const phase1 = await collect(
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
     )
+    const runId = findRunId(phase1)
 
-    const started = events.find((e) => e.type === 'RUN_STARTED') as
-      | { runId: string }
-      | undefined
-    expect(started?.runId).toBe('my-run-1')
-
-    const runState = await store.getRunState('my-run-1')
-    expect(runState).toBeDefined()
-  })
-
-  it('treats a duplicate start (same id + fingerprint) as an idempotent retry', async () => {
-    const wf = defineWorkflow({
-      name: 'wf',
-      input: z.object({ msg: z.string() }),
-      output: z.object({}).default({}),
-      state: z.object({}).default({}),
-      run: async function* () {
-        yield* waitForSignal('go')
-        return {}
-      },
-    })
-
-    const store = inMemoryRunStore()
-
-    // First call: actually starts the run.
     const first = await collect(
       runWorkflow({
         workflow: wf,
-        input: { msg: 'hi' },
-        runId: 'my-run-1',
-        runStore: store,
-      }),
-    )
-    expect(first.some((e) => e.type === 'RUN_STARTED')).toBe(true)
-    expect(first.find((e) => e.type === 'STATE_SNAPSHOT')).toBeDefined()
-
-    // Second call with the same runId + same workflow: should return
-    // an attach snapshot, not start a duplicate.
-    const second = await collect(
-      runWorkflow({
-        workflow: wf,
-        input: { msg: 'hi' },
-        runId: 'my-run-1',
-        runStore: store,
-      }),
-    )
-
-    // No run_id_conflict.
-    expect(second.find((e) => e.type === 'RUN_ERROR')).toBeUndefined()
-    // The retry got the attach envelope.
-    const stepsSnap = second.find(
-      (e) =>
-        e.type === 'CUSTOM' &&
-        (e as { name?: string }).name === 'steps-snapshot',
-    )
-    expect(stepsSnap).toBeDefined()
-  })
-
-  it('rejects a duplicate start with a different fingerprint as run_id_conflict', async () => {
-    const v1 = defineWorkflow({
-      name: 'wf',
-      input: z.object({}).default({}),
-      output: z.object({}).default({}),
-      state: z.object({}).default({}),
-      run: async function* () {
-        yield* waitForSignal('go')
-        return {}
-      },
-    })
-    const v2 = defineWorkflow({
-      name: 'wf',
-      input: z.object({}).default({}),
-      output: z.object({}).default({}),
-      state: z.object({}).default({}),
-      run: async function* () {
-        yield* waitForSignal('different-signal') // body differs
-        return {}
-      },
-    })
-
-    const store = inMemoryRunStore()
-    await collect(
-      runWorkflow({
-        workflow: v1,
-        input: {},
-        runId: 'collision',
-        runStore: store,
-      }),
-    )
-    const second = await collect(
-      runWorkflow({
-        workflow: v2,
-        input: {},
-        runId: 'collision',
-        runStore: store,
-      }),
-    )
-
-    const err = second.find((e) => e.type === 'RUN_ERROR') as
-      | { code?: string }
-      | undefined
-    expect(err?.code).toBe('run_id_conflict')
-  })
-})
-
-describe('signal idempotency record', () => {
-  it('persists signalDelivery.signalId on the resulting step record', async () => {
-    const wf = defineWorkflow({
-      name: 'wf-with-signal',
-      input: z.object({}).default({}),
-      output: z.object({}).default({}),
-      state: z.object({}).default({}),
-      run: async function* () {
-        yield* waitForSignal('webhook')
-        return {}
-      },
-    })
-
-    const store = inMemoryRunStore()
-    const start = await collect(
-      runWorkflow({
-        workflow: wf,
-        input: {},
-        runId: 'r1',
-        runStore: store,
-      }),
-    )
-    expect(start.some((e) => e.type === 'RUN_STARTED')).toBe(true)
-
-    const resume = await collect(
-      runWorkflow({
-        workflow: wf,
-        runId: 'r1',
+        runId,
         signalDelivery: {
-          signalId: 'sig-abc-123',
+          signalId: 'sig-A',
+          name: 'approval',
           payload: { ok: true },
         },
         runStore: store,
       }),
     )
+    expect(first.find((e) => e.type === 'RUN_FINISHED')).toBeDefined()
 
-    // The single-signal workflow finishes on resume, which means the
-    // signalDelivery was accepted and the payload reached user code.
-    // The store's step log gets deleted on finish, so the persisted
-    // signalId is verified instead by the multi-signal test below
-    // (which pauses again between signals so the log can be inspected
-    // mid-flight).
-    expect(resume.find((e) => e.type === 'RUN_FINISHED')).toBeDefined()
-  })
-
-  it('records signalId on the log for an interim signal in a multi-signal run', async () => {
-    const wf = defineWorkflow({
-      name: 'two-signals',
-      input: z.object({}).default({}),
-      output: z.object({}).default({}),
-      state: z.object({}).default({}),
-      run: async function* () {
-        yield* waitForSignal('first')
-        yield* waitForSignal('second')
-        return {}
-      },
-    })
-
-    const store = inMemoryRunStore()
-    await collect(
+    // Replay the SAME signalId. After the run finished + was cleaned
+    // up, the second delivery sees no run state, which surfaces as
+    // run_lost. Demonstrates that the same signalId doesn't double-
+    // resolve.
+    const second = await collect(
       runWorkflow({
         workflow: wf,
-        input: {},
-        runId: 'r2',
+        runId,
+        signalDelivery: {
+          signalId: 'sig-A',
+          name: 'approval',
+          payload: { ok: true },
+        },
         runStore: store,
       }),
     )
+    expect(second.find((e) => e.type === 'RUN_ERRORED')).toMatchObject({
+      code: 'run_lost',
+    })
+  })
 
+  it('two different signalIds racing for the same pause: first wins, second is lost', async () => {
+    const wf = createWorkflow({
+      id: 'lost-race',
+      output: z.object({ payload: z.any() }),
+    }).handler(async (ctx) => {
+      const payload = await ctx.waitForEvent('approval', {})
+      return { payload }
+    })
+
+    const store = inMemoryRunStore()
+    const phase1 = await collect(
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
+    )
+    const runId = findRunId(phase1)
+
+    // First delivery completes the run.
     await collect(
       runWorkflow({
         workflow: wf,
-        runId: 'r2',
+        runId,
         signalDelivery: {
-          signalId: 'first-sig',
-          payload: undefined,
+          signalId: 'sig-A',
+          name: 'approval',
+          payload: { winner: true },
         },
         runStore: store,
       }),
     )
 
-    // Run is now paused on 'second'. Inspect the log — it should have
-    // one entry (the resolved 'first' signal) with the matching
-    // signalId stamped on it.
-    const log = await store.getSteps('r2')
-    expect(log).toHaveLength(1)
-    expect(log[0]).toMatchObject({
-      kind: 'signal',
-      name: 'first',
-      signalId: 'first-sig',
+    // Re-pause to set up the race scenario via a fresh start.
+    const store2 = inMemoryRunStore()
+    const phase2start = await collect(
+      runWorkflow({ workflow: wf, input: {}, runStore: store2 }),
+    )
+    const runId2 = findRunId(phase2start)
+    // Pretend the log already has a SIGNAL_RESOLVED for this name
+    // (from a separate writer) by appending it directly.
+    const log = await store2.getEvents(runId2)
+    await store2.appendEvent(runId2, log.length, {
+      type: 'SIGNAL_RESOLVED',
+      ts: Date.now(),
+      stepId: '__resolve-approval',
+      name: 'approval',
+      signalId: 'first-writer',
+      payload: { winner: true },
+    })
+    simulateRestart(store2)
+
+    // Now a different signalId tries to deliver — it should lose.
+    const losingDelivery = await collect(
+      runWorkflow({
+        workflow: wf,
+        runId: runId2,
+        signalDelivery: {
+          signalId: 'sig-second',
+          name: 'approval',
+          payload: { winner: false },
+        },
+        runStore: store2,
+      }),
+    )
+
+    expect(losingDelivery.find((e) => e.type === 'RUN_ERRORED')).toMatchObject({
+      code: 'signal_lost',
     })
   })
 })

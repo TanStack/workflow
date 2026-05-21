@@ -1,96 +1,54 @@
-/**
- * Tests for the generic waitForSignal primitive + sleep typed wrapper
- * (step 5 of the durability roadmap). Pins:
- *   - waitForSignal pauses the run with `waitingFor` set, emits
- *     `run.paused`, and closes the SSE.
- *   - The host can resume by passing `signalDelivery` to runWorkflow;
- *     the payload becomes the value of `yield* waitForSignal()`.
- *   - The replay path delivers the same payload by reading the
- *     persisted signal record from the log.
- *   - sleep / sleepUntil are sugar on waitForSignal('__timer'), with
- *     the deadline plumbed onto `waitingFor.deadline`.
- */
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import {
-  defineWorkflow,
-  inMemoryRunStore,
-  runWorkflow,
-  sleep,
-  sleepUntil,
-  TIMER_SIGNAL_NAME,
-  waitForSignal,
-} from '../src'
+import { createWorkflow, inMemoryRunStore, runWorkflow } from '../src'
 import { collect, findRunId, simulateRestart } from './test-utils'
 
-describe('waitForSignal()', () => {
-  it('pauses with waitingFor set, emits run.paused, and closes the SSE', async () => {
-    const wf = defineWorkflow({
-      name: 'webhook-wait',
-      input: z.object({}).default({}),
-      output: z.object({ payload: z.unknown() }),
-      state: z.object({}).default({}),
-      run: async function* () {
-        const payload = yield* waitForSignal<{ ok: boolean }>(
-          'webhook-received',
-          { meta: { source: 'stripe' } },
-        )
-        return { payload }
-      },
+describe('ctx.waitForEvent()', () => {
+  it('pauses with waitingFor set and emits SIGNAL_AWAITED', async () => {
+    const wf = createWorkflow({
+      id: 'webhook-wait',
+      output: z.object({ payload: z.any() }),
+    }).handler(async (ctx) => {
+      const payload = await ctx.waitForEvent<{ ok: boolean }>(
+        'webhook-received',
+        { meta: { source: 'stripe' } },
+      )
+      return { payload }
     })
 
     const store = inMemoryRunStore()
     const phase1 = await collect(
-      runWorkflow({
-        workflow: wf,
-        input: {},
-        runStore: store,
-      }),
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
     )
     const runId = findRunId(phase1)
 
-    // Stream closed before RUN_FINISHED — i.e., we paused.
+    // Stream closed before RUN_FINISHED — we paused.
     expect(phase1.map((e) => e.type)).not.toContain('RUN_FINISHED')
 
-    // run.paused CUSTOM event fired for the push-discovery channel.
-    const paused = phase1.find(
-      (e) =>
-        e.type === 'CUSTOM' && (e as { name?: string }).name === 'run.paused',
-    ) as
-      | { value: { runId: string; signalName: string; kind: string } }
-      | undefined
-    expect(paused).toBeDefined()
-    expect(paused!.value.signalName).toBe('webhook-received')
-    expect(paused!.value.kind).toBe('signal')
+    const awaited = phase1.find((e) => e.type === 'SIGNAL_AWAITED')
+    expect(awaited).toMatchObject({
+      name: 'webhook-received',
+      meta: { source: 'stripe' },
+    })
 
-    // waitingFor persisted on the run state for the pull-discovery channel.
     const runState = await store.getRunState(runId)
     expect(runState?.status).toBe('paused')
     expect(runState?.waitingFor?.signalName).toBe('webhook-received')
     expect(runState?.waitingFor?.meta).toEqual({ source: 'stripe' })
   })
 
-  it('delivers the signal payload as the value of the yield (in-memory resume)', async () => {
-    const wf = defineWorkflow({
-      name: 'signal-passthrough',
-      input: z.object({}).default({}),
+  it('delivers the payload via in-memory resume', async () => {
+    const wf = createWorkflow({
+      id: 'signal-passthrough',
       output: z.object({ payload: z.any() }),
-      state: z.object({}).default({}),
-      run: async function* () {
-        const payload = yield* waitForSignal<{ ok: boolean; n: number }>(
-          'thing',
-        )
-        return { payload }
-      },
+    }).handler(async (ctx) => {
+      const payload = await ctx.waitForEvent<{ ok: boolean; n: number }>('thing')
+      return { payload }
     })
 
     const store = inMemoryRunStore()
     const phase1 = await collect(
-      runWorkflow({
-        workflow: wf,
-        input: {},
-        runStore: store,
-      }),
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
     )
     const runId = findRunId(phase1)
 
@@ -100,6 +58,7 @@ describe('waitForSignal()', () => {
         runId,
         signalDelivery: {
           signalId: 'sig-1',
+          name: 'thing',
           payload: { ok: true, n: 42 },
         },
         runStore: store,
@@ -111,29 +70,21 @@ describe('waitForSignal()', () => {
     })
   })
 
-  it('delivers the same payload via the replay path after a process restart', async () => {
-    const wf = defineWorkflow({
-      name: 'signal-replay',
-      input: z.object({}).default({}),
+  it('delivers the same payload via replay after a process restart', async () => {
+    const wf = createWorkflow({
+      id: 'signal-replay',
       output: z.object({ payload: z.any() }),
-      state: z.object({}).default({}),
-      run: async function* () {
-        const payload = yield* waitForSignal<{ ok: boolean }>('thing')
-        return { payload }
-      },
+    }).handler(async (ctx) => {
+      const payload = await ctx.waitForEvent<{ ok: boolean }>('thing')
+      return { payload }
     })
 
     const store = inMemoryRunStore()
     const phase1 = await collect(
-      runWorkflow({
-        workflow: wf,
-        input: {},
-        runStore: store,
-      }),
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
     )
     const runId = findRunId(phase1)
 
-    // Force replay path.
     simulateRestart(store)
 
     const phase2 = await collect(
@@ -142,6 +93,7 @@ describe('waitForSignal()', () => {
         runId,
         signalDelivery: {
           signalId: 'sig-1',
+          name: 'thing',
           payload: { ok: true },
         },
         runStore: store,
@@ -152,66 +104,78 @@ describe('waitForSignal()', () => {
       output: { payload: { ok: true } },
     })
   })
-})
 
-describe('sleep() / sleepUntil()', () => {
-  it('pauses on the __timer signal with the deadline plumbed through', async () => {
-    const wakeAt = Date.now() + 60_000
-
-    const wf = defineWorkflow({
-      name: 'sleep-until',
-      input: z.object({}).default({}),
-      output: z.object({}).default({}),
-      state: z.object({}).default({}),
-      run: async function* () {
-        yield* sleepUntil(wakeAt)
-        return {}
-      },
+  it('validates the payload against the optional schema', async () => {
+    const wf = createWorkflow({
+      id: 'signal-schema',
+      output: z.object({ ok: z.boolean() }),
+    }).handler(async (ctx) => {
+      const payload = await ctx.waitForEvent('approve', {
+        schema: z.object({ approved: z.boolean(), notes: z.string() }),
+      })
+      return { ok: payload.approved }
     })
 
     const store = inMemoryRunStore()
     const phase1 = await collect(
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
+    )
+    const runId = findRunId(phase1)
+
+    const phase2 = await collect(
       runWorkflow({
         workflow: wf,
-        input: {},
+        runId,
+        signalDelivery: {
+          signalId: 'sig-1',
+          name: 'approve',
+          payload: { approved: true, notes: 'lgtm' },
+        },
         runStore: store,
       }),
+    )
+
+    expect(phase2.find((e) => e.type === 'RUN_FINISHED')).toMatchObject({
+      output: { ok: true },
+    })
+  })
+})
+
+describe('ctx.sleep() / ctx.sleepUntil()', () => {
+  it('pauses on the __timer signal with the deadline plumbed through', async () => {
+    const wakeAt = Date.now() + 60_000
+
+    const wf = createWorkflow({ id: 'sleep-until' }).handler(async (ctx) => {
+      await ctx.sleepUntil(wakeAt)
+      return {}
+    })
+
+    const store = inMemoryRunStore()
+    const phase1 = await collect(
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
     )
     const runId = findRunId(phase1)
 
     const runState = await store.getRunState(runId)
-    expect(runState?.waitingFor?.signalName).toBe(TIMER_SIGNAL_NAME)
+    expect(runState?.waitingFor?.signalName).toBe('__timer')
     expect(runState?.waitingFor?.deadline).toBe(wakeAt)
 
-    const paused = phase1.find(
-      (e) =>
-        e.type === 'CUSTOM' && (e as { name?: string }).name === 'run.paused',
-    ) as
-      | { value: { signalName: string; deadline: number; kind: string } }
-      | undefined
-    expect(paused?.value.kind).toBe('sleep')
-    expect(paused?.value.deadline).toBe(wakeAt)
+    const awaited = phase1.find((e) => e.type === 'SIGNAL_AWAITED')
+    expect(awaited).toMatchObject({ name: '__timer', deadline: wakeAt })
   })
 
-  it('resumes when the host delivers a __timer signal (no payload)', async () => {
-    const wf = defineWorkflow({
-      name: 'sleep-then-done',
-      input: z.object({}).default({}),
+  it('resumes when the host delivers a __timer signal (void payload)', async () => {
+    const wf = createWorkflow({
+      id: 'sleep-then-done',
       output: z.object({ awoke: z.boolean() }),
-      state: z.object({}).default({}),
-      run: async function* () {
-        yield* sleep(60_000)
-        return { awoke: true }
-      },
+    }).handler(async (ctx) => {
+      await ctx.sleep(60_000)
+      return { awoke: true }
     })
 
     const store = inMemoryRunStore()
     const phase1 = await collect(
-      runWorkflow({
-        workflow: wf,
-        input: {},
-        runStore: store,
-      }),
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
     )
     const runId = findRunId(phase1)
 
@@ -221,6 +185,7 @@ describe('sleep() / sleepUntil()', () => {
         runId,
         signalDelivery: {
           signalId: 'wake-1',
+          name: '__timer',
           payload: undefined,
         },
         runStore: store,

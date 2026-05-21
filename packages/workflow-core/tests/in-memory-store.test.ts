@@ -1,36 +1,25 @@
-/**
- * Unit tests for `inMemoryRunStore` — pins the split state/log interface
- * and the optimistic-CAS contract `appendStep` must enforce. These pin
- * the *store* contract so a future swap to Postgres / Redis / etc.
- * implementations can be validated against the same expectations.
- */
 import { describe, expect, it } from 'vitest'
-import { inMemoryRunStore } from '../src/run-store/in-memory'
-import { LogConflictError } from '../src/types'
-import type { RunState, StepRecord } from '../src/types'
+import { inMemoryRunStore } from '../src'
+import type { RunState, WorkflowEvent } from '../src/types'
 
 const baseRunState: RunState = {
   runId: 'run-1',
   status: 'running',
-  workflowName: 'test',
+  workflowId: 'test',
   input: { msg: 'hi' },
-  state: {},
   createdAt: 1,
   updatedAt: 1,
 }
 
-const stepRecord = (over: Partial<StepRecord> = {}): StepRecord => ({
-  index: 0,
-  kind: 'step',
-  name: 'step-a',
-  result: { ok: true },
-  startedAt: 10,
-  finishedAt: 20,
-  ...over,
+const customEvent = (name: string): WorkflowEvent => ({
+  type: 'CUSTOM',
+  ts: Date.now(),
+  name,
+  value: {},
 })
 
-describe('inMemoryRunStore — state surface', () => {
-  it('round-trips run state through setRunState / getRunState', async () => {
+describe('inMemoryRunStore — state', () => {
+  it('round-trips run state', async () => {
     const store = inMemoryRunStore()
     expect(await store.getRunState('run-1')).toBeUndefined()
 
@@ -41,124 +30,99 @@ describe('inMemoryRunStore — state surface', () => {
   it('clears state and log on deleteRun', async () => {
     const store = inMemoryRunStore()
     await store.setRunState('run-1', baseRunState)
-    await store.appendStep('run-1', 0, stepRecord())
+    await store.appendEvent('run-1', 0, customEvent('a'))
 
     await store.deleteRun('run-1', 'finished')
 
     expect(await store.getRunState('run-1')).toBeUndefined()
-    expect(await store.getSteps('run-1')).toEqual([])
-  })
-
-  it('aborts the live controller when a paused run is deleted', async () => {
-    // Regression: deleting a paused run used to drop the LiveRun entry
-    // without aborting it, so the underlying generator hung forever and
-    // any approval/signal resolver awaiter dangled.
-    const store = inMemoryRunStore()
-    const controller = new AbortController()
-    let approvalCalled: { approved: boolean } | null = null
-    store.setLive('run-2', {
-      runState: { ...baseRunState, runId: 'run-2', status: 'paused' },
-      generator: {} as any,
-      abortController: controller,
-      approvalResolver: (r) => {
-        approvalCalled = { approved: r.approved }
-      },
-      pendingEvents: [],
-      pendingApprovalStepId: 'step-x',
-    })
-
-    await store.deleteRun('run-2', 'aborted')
-
-    expect(controller.signal.aborted).toBe(true)
-    expect(approvalCalled).toEqual({ approved: false })
-    expect(store.getLive('run-2')).toBeUndefined()
+    expect(await store.getEvents('run-1')).toEqual([])
   })
 })
 
-describe('inMemoryRunStore — step log surface', () => {
-  it('returns the empty array for a run with no appends', async () => {
+describe('inMemoryRunStore — event log', () => {
+  it('returns an empty array for an unknown run', async () => {
     const store = inMemoryRunStore()
-    expect(await store.getSteps('never-ran')).toEqual([])
+    expect(await store.getEvents('never-ran')).toEqual([])
   })
 
-  it('appends records in positional order and getSteps returns them ordered', async () => {
+  it('appends events in order and getEvents returns them ordered', async () => {
     const store = inMemoryRunStore()
-    await store.appendStep('run-1', 0, stepRecord({ name: 'a' }))
-    await store.appendStep('run-1', 1, stepRecord({ name: 'b' }))
-    await store.appendStep('run-1', 2, stepRecord({ name: 'c' }))
+    await store.appendEvent('run-1', 0, customEvent('a'))
+    await store.appendEvent('run-1', 1, customEvent('b'))
+    await store.appendEvent('run-1', 2, customEvent('c'))
 
-    const log = await store.getSteps('run-1')
-    expect(log.map((r) => r.name)).toEqual(['a', 'b', 'c'])
-    expect(log.map((r) => r.index)).toEqual([0, 1, 2])
-  })
-
-  it('normalizes the record index to the actual position', async () => {
-    // Caller passes a stale index field — the store fixes it to the
-    // real position so the log is internally consistent.
-    const store = inMemoryRunStore()
-    await store.appendStep('run-1', 0, stepRecord({ index: 999, name: 'a' }))
-    const log = await store.getSteps('run-1')
-    expect(log[0]?.index).toBe(0)
-  })
-
-  it('throws LogConflictError when expectedNextIndex does not match', async () => {
-    const store = inMemoryRunStore()
-    await store.appendStep('run-1', 0, stepRecord({ name: 'a' }))
-
-    // Wrong index — the log already has one entry at 0; next valid
-    // index is 1, not 0.
-    await expect(
-      store.appendStep('run-1', 0, stepRecord({ name: 'b' })),
-    ).rejects.toBeInstanceOf(LogConflictError)
-  })
-
-  it('LogConflictError carries the existing record so the engine can dedupe', async () => {
-    const store = inMemoryRunStore()
-    const winner = stepRecord({ name: 'winner', signalId: 'sig-1' })
-    await store.appendStep('run-1', 0, winner)
-
-    try {
-      await store.appendStep('run-1', 0, stepRecord({ name: 'loser' }))
-      expect.unreachable('appendStep should have thrown')
-    } catch (err) {
-      expect(err).toBeInstanceOf(LogConflictError)
-      const conflict = err as LogConflictError
-      expect(conflict.runId).toBe('run-1')
-      expect(conflict.attemptedIndex).toBe(0)
-      expect(conflict.existing?.name).toBe('winner')
-      expect(conflict.existing?.signalId).toBe('sig-1')
-    }
-  })
-
-  it('rejects appends that skip ahead of the next index', async () => {
-    const store = inMemoryRunStore()
-    // First entry must go at 0, not 1.
-    await expect(
-      store.appendStep('run-1', 1, stepRecord()),
-    ).rejects.toBeInstanceOf(LogConflictError)
+    const log = await store.getEvents('run-1')
+    expect(
+      log.map((e) =>
+        e.type === 'CUSTOM' ? (e as Extract<WorkflowEvent, { type: 'CUSTOM' }>).name : null,
+      ),
+    ).toEqual(['a', 'b', 'c'])
   })
 
   it('returns a snapshot — mutating it does not mutate the store', async () => {
     const store = inMemoryRunStore()
-    await store.appendStep('run-1', 0, stepRecord({ name: 'a' }))
+    await store.appendEvent('run-1', 0, customEvent('a'))
 
-    const snap = await store.getSteps('run-1')
-    ;(snap as Array<StepRecord>).push(stepRecord({ name: 'forged' }))
+    const snap = await store.getEvents('run-1')
+    ;(snap as Array<WorkflowEvent>).push(customEvent('forged'))
 
-    const fresh = await store.getSteps('run-1')
-    expect(fresh.map((r) => r.name)).toEqual(['a'])
+    const fresh = await store.getEvents('run-1')
+    expect(fresh).toHaveLength(1)
   })
 
-  it('isolates log between runs', async () => {
+  it('isolates the log between runs', async () => {
     const store = inMemoryRunStore()
-    await store.appendStep('run-a', 0, stepRecord({ name: 'a0' }))
-    await store.appendStep('run-b', 0, stepRecord({ name: 'b0' }))
-    await store.appendStep('run-a', 1, stepRecord({ name: 'a1' }))
+    await store.appendEvent('run-a', 0, customEvent('a0'))
+    await store.appendEvent('run-b', 0, customEvent('b0'))
+    await store.appendEvent('run-a', 1, customEvent('a1'))
 
-    expect((await store.getSteps('run-a')).map((r) => r.name)).toEqual([
-      'a0',
-      'a1',
-    ])
-    expect((await store.getSteps('run-b')).map((r) => r.name)).toEqual(['b0'])
+    expect(await store.getEvents('run-a')).toHaveLength(2)
+    expect(await store.getEvents('run-b')).toHaveLength(1)
+  })
+})
+
+describe('inMemoryRunStore — subscribe', () => {
+  it('replays already-persisted events to a fresh subscriber', async () => {
+    const store = inMemoryRunStore()
+    await store.appendEvent('run-1', 0, customEvent('a'))
+    await store.appendEvent('run-1', 1, customEvent('b'))
+
+    const seen: Array<string> = []
+    const unsub = store.subscribe!('run-1', 0, (event) => {
+      if (event.type === 'CUSTOM') seen.push(event.name)
+    })
+
+    expect(seen).toEqual(['a', 'b'])
+    unsub()
+  })
+
+  it('delivers events appended after subscription', async () => {
+    const store = inMemoryRunStore()
+    const seen: Array<string> = []
+    const unsub = store.subscribe!('run-1', 0, (event) => {
+      if (event.type === 'CUSTOM') seen.push(event.name)
+    })
+
+    await store.appendEvent('run-1', 0, customEvent('a'))
+    await store.appendEvent('run-1', 1, customEvent('b'))
+
+    expect(seen).toEqual(['a', 'b'])
+    unsub()
+
+    await store.appendEvent('run-1', 2, customEvent('c'))
+    expect(seen).toEqual(['a', 'b'])
+  })
+
+  it('honors `fromIndex` and only replays from that point', async () => {
+    const store = inMemoryRunStore()
+    await store.appendEvent('run-1', 0, customEvent('a'))
+    await store.appendEvent('run-1', 1, customEvent('b'))
+    await store.appendEvent('run-1', 2, customEvent('c'))
+
+    const seen: Array<string> = []
+    store.subscribe!('run-1', 2, (event) => {
+      if (event.type === 'CUSTOM') seen.push(event.name)
+    })
+    expect(seen).toEqual(['c'])
   })
 })

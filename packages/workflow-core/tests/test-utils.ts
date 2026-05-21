@@ -1,10 +1,3 @@
-/**
- * Shared helpers for the engine test suite. Keep this lean — only add
- * functions that genuinely appear in multiple files. Test-specific
- * scaffolding (step factories, workflow shapes used by a single spec)
- * stays in the test file that owns it.
- */
-
 import type { WorkflowEvent } from '../src/types'
 import type { InMemoryRunStore } from '../src/run-store/in-memory'
 
@@ -16,9 +9,9 @@ export async function collect<T>(iter: AsyncIterable<T>): Promise<Array<T>> {
 }
 
 /**
- * Pull the runId off the RUN_STARTED event a workflow emits. Throws if
- * the stream didn't start a run — which always indicates a bug in the
- * calling test, not a recoverable condition.
+ * Pull the runId off the RUN_STARTED event a workflow emits. Throws
+ * if the stream didn't start a run — which always indicates a bug in
+ * the calling test.
  */
 export function findRunId(events: ReadonlyArray<WorkflowEvent>): string {
   const started = events.find(
@@ -32,11 +25,12 @@ export function findRunId(events: ReadonlyArray<WorkflowEvent>): string {
 }
 
 /**
- * Drop the in-memory store's live generator handle so the engine takes
- * the replay-from-log path on the next resume. Simulates a process
- * restart (in production durable stores can't surface the live
- * generator anyway — this is the same path real deployments hit).
+ * Simulate a process restart. In the closure engine every resume is
+ * already a fresh replay from the persisted log — there's no in-
+ * memory live-handle to invalidate — so this is a no-op kept for
+ * test-narrative clarity. (Older designs needed to flush a generator
+ * cache here.)
  */
-export function simulateRestart(store: InMemoryRunStore): void {
-  store.getLive = () => undefined
+export function simulateRestart(_store: InMemoryRunStore): void {
+  // intentionally empty
 }

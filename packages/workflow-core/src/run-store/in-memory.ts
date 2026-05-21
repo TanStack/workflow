@@ -1,54 +1,47 @@
 import { LogConflictError } from '../types'
-import type { LiveRun, RunState, RunStore, StepRecord } from '../types'
+import type { RunState, RunStore, WorkflowEvent } from '../types'
 
 export interface InMemoryRunStoreOptions {
-  /** TTL in milliseconds. Default 1 hour. */
+  /** TTL in milliseconds for finished/errored/aborted runs. Paused
+   *  runs are exempt. Default 1 hour. */
   ttl?: number
 }
 
-/**
- * In-memory RunStore. Holds RunState plus the per-run append-only step
- * log so the engine can replay across a process restart within the same
- * heap, and stashes the live generator handle alongside so single-node
- * resumes don't have to reconstruct from the log. Suitable for
- * single-process prototypes and the test suite.
- */
-export interface InMemoryRunStore extends RunStore {
-  /** Engine-only: stash the live generator handle alongside the run state. */
-  setLive: (runId: string, live: LiveRun) => void
-  /** Engine-only: retrieve the live generator handle. */
-  getLive: (runId: string) => LiveRun | undefined
-}
+export type InMemoryRunStore = RunStore
 
+/**
+ * In-memory backing store. Holds per-run state + append-only event
+ * log + optional push subscribers. Suitable for single-process
+ * prototypes and the test suite.
+ */
 export function inMemoryRunStore(
   options: InMemoryRunStoreOptions = {},
 ): InMemoryRunStore {
   const ttl = options.ttl ?? 60 * 60 * 1000
   const runs = new Map<string, RunState>()
-  const live = new Map<string, LiveRun>()
-  const stepLogs = new Map<string, Array<StepRecord>>()
+  const logs = new Map<string, Array<WorkflowEvent>>()
   const expirations = new Map<string, ReturnType<typeof setTimeout>>()
+  const subscribers = new Map<
+    string,
+    Set<(event: WorkflowEvent, index: number) => void>
+  >()
 
   function scheduleExpiry(runId: string, state?: RunState) {
     const existing = expirations.get(runId)
     if (existing) clearTimeout(existing)
-    // Don't expire paused runs from underneath the engine. A run that
-    // pauses on a long-running `waitForSignal` / `sleep` (deadline >
-    // ttl) is intentional persistence — the host owns cleanup via
-    // `deleteRun` and the engine calls `deleteRun` automatically on
-    // finish / error / abort.
+    // Paused runs are intentional persistence — engine cleans them up
+    // when they finish/error/abort via `deleteRun`.
     if (state?.status === 'paused') return
     const handle = setTimeout(() => {
       runs.delete(runId)
-      live.delete(runId)
-      stepLogs.delete(runId)
+      logs.delete(runId)
       expirations.delete(runId)
+      subscribers.delete(runId)
     }, ttl)
     expirations.set(runId, handle)
   }
 
   return {
-    // ── state ─────────────────────────────────────────────────────────
     getRunState(runId) {
       return Promise.resolve(runs.get(runId))
     },
@@ -58,80 +51,63 @@ export function inMemoryRunStore(
       return Promise.resolve()
     },
     deleteRun(runId, _reason) {
-      // If a live run handle is still around (paused on approval / signal /
-      // sleep), abort it and reject any pending approval resolver before
-      // dropping the entry. Without this, callers awaiting the resolver
-      // promise or the engine's generator continuation hang forever after
-      // the run record disappears.
-      const liveRun = live.get(runId)
-      if (liveRun) {
-        try {
-          liveRun.abortController.abort()
-        } catch {
-          // Aborting an already-aborted controller is a no-op in the
-          // standard but defensive callers may throw — swallow so cleanup
-          // can complete.
-        }
-        if (liveRun.approvalResolver) {
-          try {
-            // Synthesizing a rejection-style "approved=false" lets any
-            // awaiter resolve cleanly rather than hanging. Hosts that
-            // care about reason can read the run state's status.
-            liveRun.approvalResolver({
-              approvalId: liveRun.pendingApprovalStepId ?? '',
-              approved: false,
-              feedback: 'run deleted before approval resolved',
-            })
-          } catch {
-            // Resolver may already have been invoked.
-          }
-        }
-      }
       runs.delete(runId)
-      live.delete(runId)
-      stepLogs.delete(runId)
+      logs.delete(runId)
       const handle = expirations.get(runId)
       if (handle) clearTimeout(handle)
       expirations.delete(runId)
+      subscribers.delete(runId)
       return Promise.resolve()
     },
 
-    // ── step log (CAS append + ordered read) ──────────────────────────
-    appendStep(runId, expectedNextIndex, record) {
-      const log = stepLogs.get(runId) ?? []
+    appendEvent(runId, expectedNextIndex, event) {
+      const log = logs.get(runId) ?? []
       if (log.length !== expectedNextIndex) {
-        // Another writer slipped in; let the engine decide whether to
-        // treat the existing entry as an idempotent retry (same
-        // signalId) or as a lost race (different signalId).
         return Promise.reject(
-          new LogConflictError(
-            runId,
-            expectedNextIndex,
-            log[expectedNextIndex],
-          ),
+          new LogConflictError(runId, expectedNextIndex, log[expectedNextIndex]),
         )
       }
-      // Record's index field is normalized to the actual position so
-      // callers can construct partial records without worrying about
-      // staying in sync with the log.
-      log.push({ ...record, index: expectedNextIndex })
-      stepLogs.set(runId, log)
+      log.push(event)
+      logs.set(runId, log)
       scheduleExpiry(runId, runs.get(runId))
+      const subs = subscribers.get(runId)
+      if (subs) {
+        const index = log.length - 1
+        for (const cb of subs) {
+          try {
+            cb(event, index)
+          } catch {
+            /* Subscriber errors must not break the append. */
+          }
+        }
+      }
       return Promise.resolve()
     },
-    getSteps(runId) {
-      // Return a stable snapshot — callers must not mutate, but a fresh
-      // copy prevents accidental aliasing across awaits.
-      const log = stepLogs.get(runId)
+    getEvents(runId) {
+      const log = logs.get(runId)
       return Promise.resolve(log ? [...log] : [])
     },
 
-    // ── engine-internal LiveRun cache ─────────────────────────────────
-    setLive(runId, l) {
-      live.set(runId, l)
-    },
-    getLive(runId) {
-      return live.get(runId)
+    subscribe(runId, fromIndex, onEvent) {
+      const log = logs.get(runId) ?? []
+      for (let i = fromIndex; i < log.length; i++) {
+        try {
+          onEvent(log[i]!, i)
+        } catch {
+          /* swallow */
+        }
+      }
+      let subs = subscribers.get(runId)
+      if (!subs) {
+        subs = new Set()
+        subscribers.set(runId, subs)
+      }
+      const set = subs
+      set.add(onEvent)
+      return () => {
+        set.delete(onEvent)
+        if (set.size === 0) subscribers.delete(runId)
+      }
     },
   }
 }

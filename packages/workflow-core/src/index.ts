@@ -1,25 +1,27 @@
 // ===== Workflow definition =====
-export { defineWorkflow } from './define/define-workflow'
-export type { DefineWorkflowConfig } from './define/define-workflow'
+export { createWorkflow } from './define/define-workflow'
+export type {
+  AccumulateExtensions,
+  AssertNonReservedExtension,
+  CreateWorkflowConfig,
+  WorkflowBuilder,
+} from './define/define-workflow'
 
-// ===== Generator primitives =====
-export { approve } from './primitives/approve'
-export type { ApproveOptions } from './primitives/approve'
-export { now } from './primitives/now'
-export { patched } from './primitives/patched'
-export { retry } from './primitives/retry'
-export type { RetryOptions } from './primitives/retry'
-export { sleep, sleepUntil, TIMER_SIGNAL_NAME } from './primitives/sleep'
-export { step } from './primitives/step'
-export type { StepOptions } from './primitives/step'
-export { uuid } from './primitives/uuid'
-export { waitForSignal } from './primitives/wait-for-signal'
-export type { WaitForSignalOptions } from './primitives/wait-for-signal'
+// ===== Middleware =====
+export { createMiddleware } from './middleware/create-middleware'
+export type { CreateMiddlewareBuilder } from './middleware/create-middleware'
+
+// ===== Result helpers =====
 export { fail, succeed } from './result'
 
 // ===== Engine =====
 export { runWorkflow } from './engine/run-workflow'
 export type { RunWorkflowOptions } from './engine/run-workflow'
+export { handleWorkflowWebhook } from './engine/handle-webhook'
+export type {
+  HandleWebhookOptions,
+  WebhookPayload,
+} from './engine/handle-webhook'
 export type { Operation } from './engine/state-diff'
 
 // ===== Server helpers =====
@@ -45,24 +47,29 @@ export { LogConflictError, StepTimeoutError } from './types'
 
 // ===== Public types =====
 export type {
+  AnyMiddleware,
   AnyWorkflowDefinition,
   ApprovalResult,
+  ApproveOptions,
+  BaseCtx,
+  CheckpointEvent,
+  Ctx,
   DeleteReason,
-  EmitFn,
   InferSchema,
+  Middleware,
+  MiddlewareServerFn,
+  ReservedCtxFields,
   RunState,
   RunStatus,
   RunStore,
   SchemaInput,
-  SignalResult,
+  SerializedError,
+  SignalDelivery,
   StepAttempt,
   StepContext,
-  StepDescriptor,
-  StepGenerator,
-  StepKind,
-  StepRecord,
+  StepOptions,
   StepRetryOptions,
+  WaitForEventOptions,
   WorkflowDefinition,
   WorkflowEvent,
-  WorkflowRunArgs,
 } from './types'
