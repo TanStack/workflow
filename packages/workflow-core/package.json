@@ -1,7 +1,7 @@
 {
   "name": "@tanstack/workflow-core",
-  "version": "0.0.0",
-  "description": "Type-safe durable execution engine. Generator-based workflows with replay, signals, approvals, retries, and pluggable persistence.",
+  "version": "0.0.1",
+  "description": "Type-safe durable execution engine. Closure-based workflows with replay, pause/resume on approvals and signals, typed middleware, and a pluggable event log.",
   "author": "Tanner Linsley",
   "license": "MIT",
   "repository": {
