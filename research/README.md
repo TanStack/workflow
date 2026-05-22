@@ -1,6 +1,6 @@
 # Research archive
 
-Point-in-time design notes from the planning phase that led to `@tanstack/workflow-core`. **Not maintained.** Treat as historical context for why the engine is shaped the way it is.
+Design notes captured at decision points. **Not maintained as living docs** — treat as historical context for why the engine is shaped the way it is, and a sketchpad for upcoming work.
 
 If you want current docs, see [/docs](../docs/) and [packages/workflow-core/README.md](../packages/workflow-core/README.md). The current API and engine may differ from what's described here in places — these were exploratory snapshots, not specs.
 
@@ -13,6 +13,7 @@ If you want current docs, see [/docs](../docs/) and [packages/workflow-core/READ
 | [PRIOR_ART_AI_ORCHESTRATION.md](PRIOR_ART_AI_ORCHESTRATION.md) | Inventory of Alem Tuzlak + Tom Beckenham's existing generator-based engine in `@tanstack/ai-orchestration` ([TanStack/ai#542](https://github.com/TanStack/ai/pull/542)) — the parent we extracted from.                                 | Engine extracted. AI surface (agents, orchestrators, AG-UI events) stays in `ai-orchestration`.                                      |
 | [SRC_SKEW_AND_RESUMPTION.md](SRC_SKEW_AND_RESUMPTION.md)       | Analysis of fingerprint-based source-skew handling and its gaps (Prettier reformat / minifier drift / silent corruption in patch mode).                                                                                                 | Motivated the move to explicit versioning.                                                                                           |
 | [EXPLICIT_VERSIONING.md](EXPLICIT_VERSIONING.md)               | Alternative design: explicit `version` + `previousVersions` registry + lint-time lock file, replacing runtime fingerprinting.                                                                                                           | **Shipped.** `createWorkflow({ version }).previousVersions([...])` + version-routing engine. Lockfile + ESLint plugin still to come. |
+| [SCHEDULING.md](SCHEDULING.md)                                 | How major workflow engines model cron / recurring execution; what a future `@tanstack/workflow-cron` would look like.                                                                                                                   | Forward-looking. No package yet. Engine needs no changes; deferred until a durable storage adapter ships.                            |
 
 ## How these came to be
 
