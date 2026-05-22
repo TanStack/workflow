@@ -40,8 +40,7 @@ export async function selectWorkflowVersion<T extends AnyWorkflowDefinition>(
     // run into v-undefined code, which is a determinism violation.
     return versions.find(
       (v) =>
-        v.id === runState.workflowId &&
-        v.version === runState.workflowVersion,
+        v.id === runState.workflowId && v.version === runState.workflowVersion,
     )
   }
 

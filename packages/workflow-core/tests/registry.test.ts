@@ -68,9 +68,7 @@ describe('selectWorkflowVersion', () => {
     )
     const runId = findRunId(events)
 
-    expect(
-      await selectWorkflowVersion([legacy], runId, store),
-    ).toBeUndefined()
+    expect(await selectWorkflowVersion([legacy], runId, store)).toBeUndefined()
   })
 })
 

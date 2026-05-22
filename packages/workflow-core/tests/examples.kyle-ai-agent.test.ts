@@ -71,12 +71,20 @@ function makeAiAgentWorkflow(chat: AgentChat) {
           meta: { stepId: planStep.id, output: toolResult.output },
         })
         if (!confirm.proceed) {
-          results.push({ id: planStep.id, output: toolResult.output, skipped: true })
+          results.push({
+            id: planStep.id,
+            output: toolResult.output,
+            skipped: true,
+          })
           continue
         }
       }
 
-      results.push({ id: planStep.id, output: toolResult.output, skipped: false })
+      results.push({
+        id: planStep.id,
+        output: toolResult.output,
+        skipped: false,
+      })
     }
 
     return { status: 'completed' as const, results }

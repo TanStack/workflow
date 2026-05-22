@@ -42,7 +42,9 @@ describe('ctx.waitForEvent()', () => {
       id: 'signal-passthrough',
       output: z.object({ payload: z.any() }),
     }).handler(async (ctx) => {
-      const payload = await ctx.waitForEvent<{ ok: boolean; n: number }>('thing')
+      const payload = await ctx.waitForEvent<{ ok: boolean; n: number }>(
+        'thing',
+      )
       return { payload }
     })
 

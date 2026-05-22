@@ -243,9 +243,7 @@ describe('inference — workflow author writes plain JS, types still flow', () =
   it('exposes middleware-added fields on ctx with proper types', () => {
     const mw = createMiddleware().server<{
       db: { query: (sql: string) => Array<{ id: string }> }
-    }>(async ({ next }) =>
-      next({ context: { db: { query: () => [] } } }),
-    )
+    }>(async ({ next }) => next({ context: { db: { query: () => [] } } }))
 
     const wf = createWorkflow({ id: 'inferred-mw' })
       .middleware([mw])

@@ -133,10 +133,7 @@ async function drive(options: DriveOptions): Promise<void> {
     await attachRun(options)
     return
   }
-  if (
-    options.runId &&
-    (options.signalDelivery || options.approval)
-  ) {
+  if (options.runId && (options.signalDelivery || options.approval)) {
     await resumeRun(options)
     return
   }
@@ -434,7 +431,11 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
 
   let output: unknown
   try {
-    output = await composeMiddlewares(workflow.middlewares, ctx, workflow.handler)
+    output = await composeMiddlewares(
+      workflow.middlewares,
+      ctx,
+      workflow.handler,
+    )
     // Flush any final state delta.
     flushStateDelta(engine)
   } catch (err) {
@@ -459,7 +460,13 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
         error: { name: 'Aborted', message: 'Workflow aborted' },
         code: 'aborted',
       }
-      await emitAndAppend(runStore, runId, engine.nextLogIndex++, emit, errEvent)
+      await emitAndAppend(
+        runStore,
+        runId,
+        engine.nextLogIndex++,
+        emit,
+        errEvent,
+      )
       await runStore.deleteRun(runId, 'aborted')
       return
     }
@@ -492,7 +499,13 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
     runId,
     output,
   }
-  await emitAndAppend(runStore, runId, engine.nextLogIndex++, emit, finishedEvent)
+  await emitAndAppend(
+    runStore,
+    runId,
+    engine.nextLogIndex++,
+    emit,
+    finishedEvent,
+  )
   await runStore.deleteRun(runId, 'finished')
 }
 
@@ -727,10 +740,9 @@ async function engineWaitForEvent<TPayload>(
       e.name === name,
   )
   if (cached) {
-    const payload = (cached.event as Extract<
-      WorkflowEvent,
-      { type: 'SIGNAL_RESOLVED' }
-    >).payload as TPayload
+    const payload = (
+      cached.event as Extract<WorkflowEvent, { type: 'SIGNAL_RESOLVED' }>
+    ).payload as TPayload
     if (options?.schema) {
       const validated = options.schema['~standard'].validate(payload)
       if (validated instanceof Promise) {
@@ -944,8 +956,7 @@ function setupAbort(external?: AbortSignal): AbortController {
   const ctrl = new AbortController()
   if (external) {
     if (external.aborted) ctrl.abort()
-    else
-      external.addEventListener('abort', () => ctrl.abort(), { once: true })
+    else external.addEventListener('abort', () => ctrl.abort(), { once: true })
   }
   return ctrl
 }
@@ -1099,10 +1110,7 @@ async function appendSeed(args: {
       // landed, classify against its signalId.
       for (let i = awaitedIdx + 1; i < history.length; i++) {
         const e = history[i]!
-        if (
-          e.type === 'SIGNAL_RESOLVED' &&
-          e.name === signalDelivery.name
-        ) {
+        if (e.type === 'SIGNAL_RESOLVED' && e.name === signalDelivery.name) {
           if (e.signalId === signalDelivery.signalId) {
             return { kind: 'idempotent' }
           }

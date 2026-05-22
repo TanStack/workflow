@@ -72,9 +72,7 @@ const expenseApproval = createWorkflow({
     submittedBy: z.string(),
   }),
 }).handler(async (ctx) => {
-  const validated = await ctx.step('validate', () =>
-    validateExpense(ctx.input),
-  )
+  const validated = await ctx.step('validate', () => validateExpense(ctx.input))
 
   // Auto-approve small expenses; large ones require a manager.
   if (ctx.input.amount > 1000) {

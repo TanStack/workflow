@@ -46,7 +46,8 @@ export type AssertNonReservedExtension<TExt> = keyof TExt &
   ReservedCtxFields extends never
   ? TExt
   : `Middleware extension may not shadow reserved ctx field: ${keyof TExt &
-      ReservedCtxFields & string}`
+      ReservedCtxFields &
+      string}`
 
 // ============================================================
 // Public configuration shape
@@ -154,7 +155,9 @@ interface InternalState {
   previous: ReadonlyArray<AnyWorkflowDefinition>
 }
 
-function buildBuilder(state: InternalState): WorkflowBuilder<any, any, any, any> {
+function buildBuilder(
+  state: InternalState,
+): WorkflowBuilder<any, any, any, any> {
   return {
     middleware(middlewares) {
       return buildBuilder({

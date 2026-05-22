@@ -54,7 +54,9 @@ describe('inMemoryRunStore — event log', () => {
     const log = await store.getEvents('run-1')
     expect(
       log.map((e) =>
-        e.type === 'CUSTOM' ? (e as Extract<WorkflowEvent, { type: 'CUSTOM' }>).name : null,
+        e.type === 'CUSTOM'
+          ? (e as Extract<WorkflowEvent, { type: 'CUSTOM' }>).name
+          : null,
       ),
     ).toEqual(['a', 'b', 'c'])
   })

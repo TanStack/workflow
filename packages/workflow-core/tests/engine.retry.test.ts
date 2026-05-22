@@ -35,7 +35,7 @@ describe('ctx.step() retry policy', () => {
     const finished = events.find((e) => e.type === 'STEP_FINISHED')
     expect(finished).toMatchObject({ stepId: 'flaky' })
     expect(
-      (finished as Extract<typeof events[number], { type: 'STEP_FINISHED' }>)
+      (finished as Extract<(typeof events)[number], { type: 'STEP_FINISHED' }>)
         .attempts,
     ).toHaveLength(3)
   })
@@ -120,15 +120,14 @@ describe('ctx.step() retry policy', () => {
     const wf = createWorkflow({
       id: 'default-retry',
       output: z.object({ ok: z.boolean() }),
-    })
-      .handler(async (ctx) => {
-        await ctx.step('flake', () => {
-          attempts++
-          if (attempts < 2) throw new Error('x')
-          return null
-        })
-        return { ok: true }
+    }).handler(async (ctx) => {
+      await ctx.step('flake', () => {
+        attempts++
+        if (attempts < 2) throw new Error('x')
+        return null
       })
+      return { ok: true }
+    })
 
     // Apply default retry by overriding on the definition object.
     wf.defaultStepRetry = { maxAttempts: 3, backoff: 'fixed', baseMs: 1 }

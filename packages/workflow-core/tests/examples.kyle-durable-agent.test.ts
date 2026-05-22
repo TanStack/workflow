@@ -127,7 +127,11 @@ function makeDurableAgent(
 
       if (action.tool === 'done') {
         ctx.state.memory['progress.md'] = `done: ${action.outcome}`
-        return { status: 'completed' as const, outcome: action.outcome, callsMade }
+        return {
+          status: 'completed' as const,
+          outcome: action.outcome,
+          callsMade,
+        }
       }
 
       // 2. Permission check.
@@ -375,9 +379,7 @@ describe('example: Kyle durable-agent pattern on top of workflow-core', () => {
     const hasGoalDelta = events.some(
       (e) =>
         e.type === 'STATE_DELTA' &&
-        e.delta.some(
-          (op) => 'path' in op && op.path === '/context/goal.md',
-        ),
+        e.delta.some((op) => 'path' in op && op.path === '/context/goal.md'),
     )
     expect(hasGoalDelta).toBe(true)
 
@@ -385,9 +387,7 @@ describe('example: Kyle durable-agent pattern on top of workflow-core', () => {
     const memoryUpdates = events.filter(
       (e) =>
         e.type === 'STATE_DELTA' &&
-        e.delta.some(
-          (op) => 'path' in op && op.path.startsWith('/memory/'),
-        ),
+        e.delta.some((op) => 'path' in op && op.path.startsWith('/memory/')),
     )
     expect(memoryUpdates.length).toBeGreaterThan(0)
   })

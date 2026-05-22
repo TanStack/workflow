@@ -93,7 +93,9 @@ describe('attach — finished run', () => {
 
 describe('attach — missing run', () => {
   it('emits RUN_ERRORED with code run_lost when the runId is unknown', async () => {
-    const wf = createWorkflow({ id: 'attach-missing' }).handler(async () => ({}))
+    const wf = createWorkflow({ id: 'attach-missing' }).handler(
+      async () => ({}),
+    )
 
     const attached = await collect(
       runWorkflow({

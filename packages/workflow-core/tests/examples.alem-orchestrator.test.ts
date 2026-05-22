@@ -203,7 +203,8 @@ function makeOrchestrator(agents: OrchestratorAgents) {
     }
 
     if (triage.next === 'implement') {
-      if (!ctx.state.spec) throw new Error('Triage requested implement but no spec')
+      if (!ctx.state.spec)
+        throw new Error('Triage requested implement but no spec')
       ctx.state.phase = 'implementing'
       const result = await runImplementation(ctx, agents, ctx.state.spec)
       ctx.state.result = result
@@ -350,10 +351,7 @@ describe('example: Alem feature orchestrator ported to closure API', () => {
       output: {
         phase: 'implementing',
         result: {
-          patches: [
-            { filename: 'src/auth.ts' },
-            { filename: 'src/api.ts' },
-          ],
+          patches: [{ filename: 'src/auth.ts' }, { filename: 'src/api.ts' }],
           rationale: 'Touch each declared file.',
         },
       },

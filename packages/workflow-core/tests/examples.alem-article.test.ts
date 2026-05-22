@@ -118,8 +118,7 @@ function makeArticleWorkflow(agents: AgentImpls) {
     for (let round = 0; round < 4; round++) {
       ctx.state.phase = 'awaiting-approval'
       const decision = await ctx.approve({
-        title:
-          round === 0 ? 'Publish this article?' : 'Publish the revision?',
+        title: round === 0 ? 'Publish this article?' : 'Publish the revision?',
         description: current.title,
       })
       if (decision.approved) {
@@ -153,10 +152,8 @@ const happyAgents: AgentImpls = {
       title: `Why ${topic} matters`,
       paragraphs: ['A.', 'B.', 'C.'],
     }),
-  legalReview: () =>
-    Promise.resolve({ verdict: 'pass', findings: [] }),
-  skepticReview: () =>
-    Promise.resolve({ verdict: 'pass', findings: [] }),
+  legalReview: () => Promise.resolve({ verdict: 'pass', findings: [] }),
+  skepticReview: () => Promise.resolve({ verdict: 'pass', findings: [] }),
   editor: ({ draft }) =>
     Promise.resolve({
       title: `${draft.title} (edited)`,
@@ -277,8 +274,7 @@ describe('example: Alem article workflow ported to closure API', () => {
     // Output is the discriminated union of succeed / fail, with the
     // narrower `article` shape preserved through `succeed`.
     expectTypeOf<WorkflowOutput<typeof wf>>().toMatchTypeOf<
-      | { ok: true; article: DraftT }
-      | { ok: false; reason: string }
+      { ok: true; article: DraftT } | { ok: false; reason: string }
     >()
   })
 })

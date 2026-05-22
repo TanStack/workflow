@@ -9,7 +9,11 @@ pnpm add @tanstack/workflow-core zod
 ## Hello workflow
 
 ```ts
-import { createWorkflow, inMemoryRunStore, runWorkflow } from '@tanstack/workflow-core'
+import {
+  createWorkflow,
+  inMemoryRunStore,
+  runWorkflow,
+} from '@tanstack/workflow-core'
 import { z } from 'zod'
 
 const greet = createWorkflow({
@@ -31,18 +35,18 @@ for await (const event of runWorkflow({
 
 ## What you get on `ctx`
 
-| Field | Type | Purpose |
-|---|---|---|
-| `ctx.input` | typed from `input` schema | request payload |
-| `ctx.state` | typed from `state` schema | mutable; tracked between primitives, emitted as `STATE_DELTA` |
-| `ctx.runId` | `string` | stable identifier; safe as an idempotency key |
-| `ctx.signal` | `AbortSignal` | run-level cancellation |
-| `ctx.step(id, fn, opts?)` | `Promise<T>` | durable side-effect with replay |
-| `ctx.sleep(ms)` / `ctx.sleepUntil(ts)` | `Promise<void>` | durable pause via `__timer` signal |
-| `ctx.waitForEvent(name, opts?)` | `Promise<TPayload>` | pause until host delivers a signal |
-| `ctx.approve({ title, description? })` | `Promise<ApprovalResult>` | pause for human approval |
-| `ctx.now()` / `ctx.uuid()` | `Promise<number / string>` | deterministic recorded values |
-| `ctx.emit(name, value)` | `void` | observability-only custom event |
+| Field                                  | Type                       | Purpose                                                       |
+| -------------------------------------- | -------------------------- | ------------------------------------------------------------- |
+| `ctx.input`                            | typed from `input` schema  | request payload                                               |
+| `ctx.state`                            | typed from `state` schema  | mutable; tracked between primitives, emitted as `STATE_DELTA` |
+| `ctx.runId`                            | `string`                   | stable identifier; safe as an idempotency key                 |
+| `ctx.signal`                           | `AbortSignal`              | run-level cancellation                                        |
+| `ctx.step(id, fn, opts?)`              | `Promise<T>`               | durable side-effect with replay                               |
+| `ctx.sleep(ms)` / `ctx.sleepUntil(ts)` | `Promise<void>`            | durable pause via `__timer` signal                            |
+| `ctx.waitForEvent(name, opts?)`        | `Promise<TPayload>`        | pause until host delivers a signal                            |
+| `ctx.approve({ title, description? })` | `Promise<ApprovalResult>`  | pause for human approval                                      |
+| `ctx.now()` / `ctx.uuid()`             | `Promise<number / string>` | deterministic recorded values                                 |
+| `ctx.emit(name, value)`                | `void`                     | observability-only custom event                               |
 
 Middleware can add more.
 
@@ -54,14 +58,20 @@ const store = inMemoryRunStore()
 const phase1 = await collect(runWorkflow({ workflow, input, runStore: store }))
 const runId = findRunId(phase1)
 
-await collect(runWorkflow({
-  workflow,
-  runId,
-  runStore: store,
-  approval: { approvalId: 'a-1', approved: true },
-  // — or —
-  signalDelivery: { signalId: 'evt-1', name: 'manager-approval', payload: { ok: true } },
-}))
+await collect(
+  runWorkflow({
+    workflow,
+    runId,
+    runStore: store,
+    approval: { approvalId: 'a-1', approved: true },
+    // — or —
+    signalDelivery: {
+      signalId: 'evt-1',
+      name: 'manager-approval',
+      payload: { ok: true },
+    },
+  }),
+)
 ```
 
 ## Status

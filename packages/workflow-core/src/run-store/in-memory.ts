@@ -64,7 +64,11 @@ export function inMemoryRunStore(
       const log = logs.get(runId) ?? []
       if (log.length !== expectedNextIndex) {
         return Promise.reject(
-          new LogConflictError(runId, expectedNextIndex, log[expectedNextIndex]),
+          new LogConflictError(
+            runId,
+            expectedNextIndex,
+            log[expectedNextIndex],
+          ),
         )
       }
       log.push(event)

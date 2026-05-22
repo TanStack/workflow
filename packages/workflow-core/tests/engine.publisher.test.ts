@@ -99,8 +99,6 @@ describe('publisher hook', () => {
       }),
     )
 
-    expect(customEvents).toEqual([
-      { type: 'SIGNAL_AWAITED', name: 'webhook' },
-    ])
+    expect(customEvents).toEqual([{ type: 'SIGNAL_AWAITED', name: 'webhook' }])
   })
 })

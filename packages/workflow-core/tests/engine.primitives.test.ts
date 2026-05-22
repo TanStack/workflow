@@ -158,7 +158,9 @@ describe('ctx.now()', () => {
     const log = await store.getEvents(runId)
     const recorded = log.find((e) => e.type === 'NOW_RECORDED')
     expect(recorded).toBeDefined()
-    const recordedTs = (recorded as Extract<typeof log[number], { type: 'NOW_RECORDED' }>).value
+    const recordedTs = (
+      recorded as Extract<(typeof log)[number], { type: 'NOW_RECORDED' }>
+    ).value
 
     simulateRestart(store)
 
@@ -196,7 +198,9 @@ describe('ctx.uuid()', () => {
     const log = await store.getEvents(runId)
     const recorded = log.find((e) => e.type === 'UUID_RECORDED')
     expect(recorded).toBeDefined()
-    const recordedId = (recorded as Extract<typeof log[number], { type: 'UUID_RECORDED' }>).value
+    const recordedId = (
+      recorded as Extract<(typeof log)[number], { type: 'UUID_RECORDED' }>
+    ).value
     expect(recordedId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     )
