@@ -1,45 +1,31 @@
 # Installation
 
-## Core Package
-
 ```bash
-npm install @tanstack/template
-# or
-pnpm add @tanstack/template
-# or
-yarn add @tanstack/template
+pnpm add @tanstack/workflow-core zod
 ```
 
-## React
+`zod` is a peer requirement only if you use `input` / `output` / `state` / `waitForEvent({ schema })` validation. Any [Standard Schema](https://github.com/standard-schema/standard-schema) library works.
 
-```bash
-npm install @tanstack/react-template
-# or
-pnpm add @tanstack/react-template
-# or
-yarn add @tanstack/react-template
+## Storage
+
+Run state lives in a `RunStore`. Ships with one in-memory implementation:
+
+```ts
+import { inMemoryRunStore } from '@tanstack/workflow-core'
+const runStore = inMemoryRunStore({ ttl: 60 * 60 * 1000 }) // 1h, paused runs exempt
 ```
 
-## Solid
+Durable adapters (Postgres, SQLite, D1, Durable Objects, Redis) are forthcoming as `@tanstack/workflow-*` packages.
 
-```bash
-npm install @tanstack/solid-template
-# or
-pnpm add @tanstack/solid-template
-# or
-yarn add @tanstack/solid-template
-```
+## Server framework
 
-## Devtools
+Engine is framework-agnostic. Two entry points:
 
-### React Devtools
+- `runWorkflow({...})` — long-lived process or SSE handler. Returns `AsyncIterable<WorkflowEvent>`.
+- `handleWorkflowWebhook({...})` — stateless one-invocation drive. Returns the appended events.
 
-```bash
-npm install @tanstack/react-template-devtools
-```
+Use either with TanStack Start server functions, Hono, Express, Cloudflare Workers, AWS Lambda — anything that can receive an HTTP request.
 
-### Solid Devtools
+## Framework bindings
 
-```bash
-npm install @tanstack/solid-template-devtools
-```
+None yet. React / Solid / Vue / Svelte hooks (`useWorkflow`) ship in follow-up packages.

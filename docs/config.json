@@ -3,7 +3,7 @@
   "docSearch": {
     "appId": "",
     "apiKey": "",
-    "indexName": "tanstack-template"
+    "indexName": "tanstack-workflow"
   },
   "sections": [
     {
@@ -21,34 +21,22 @@
           "label": "Quick Start",
           "to": "quick-start"
         }
-      ],
-      "frameworks": [
-        {
-          "label": "react",
-          "children": [
-            {
-              "label": "React Adapter",
-              "to": "framework/react/adapter"
-            }
-          ]
-        },
-        {
-          "label": "solid",
-          "children": [
-            {
-              "label": "Solid Adapter",
-              "to": "framework/solid/adapter"
-            }
-          ]
-        }
       ]
     },
     {
-      "label": "API Reference",
+      "label": "Concepts",
       "children": [
         {
-          "label": "Core API",
-          "to": "reference"
+          "label": "Primitives",
+          "to": "concepts/primitives"
+        },
+        {
+          "label": "Middleware",
+          "to": "concepts/middleware"
+        },
+        {
+          "label": "Replay and resume",
+          "to": "concepts/replay-and-resume"
         }
       ]
     }

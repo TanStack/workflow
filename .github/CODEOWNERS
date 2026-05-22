@@ -1,0 +1,15 @@
+# CODEOWNERS — require review for sensitive paths
+#
+# Supply-chain attack surface lives in CI config, lockfiles, publish
+# scripts, and package manifests. Routing these to tanstack-core keeps
+# a small set of human eyeballs on every change that could influence
+# what ends up on npm.
+
+.github/                @TanStack/tanstack-core
+.nx/                    @TanStack/tanstack-core
+nx.json                 @TanStack/tanstack-core
+.changeset/config.json  @TanStack/tanstack-core
+scripts/                @TanStack/tanstack-core
+.npmrc                  @TanStack/tanstack-core
+pnpm-workspace.yaml     @TanStack/tanstack-core
+package.json            @TanStack/tanstack-core
