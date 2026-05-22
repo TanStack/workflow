@@ -1,0 +1,19 @@
+# Research archive
+
+Point-in-time design notes from the planning phase that led to `@tanstack/workflow-core`. **Not maintained.** Treat as historical context for why the engine is shaped the way it is.
+
+If you want current docs, see [/docs](../docs/) and [packages/workflow-core/README.md](../packages/workflow-core/README.md). The current API and engine may differ from what's described here in places — these were exploratory snapshots, not specs.
+
+## Contents
+
+| File                                                           | What it covered                                                                                                                                                                                                                         | Status of recommendations                                                                                                            |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| [RESEARCH.md](RESEARCH.md)                                     | Competitive landscape (Inngest, Trigger.dev, Temporal, DBOS, Hatchet, Cloudflare Workflows, Mastra, LangGraph.js, AI SDK), technical patterns, deployment architecture, market positioning, Lovable / AI-app-builder distribution play. | Largely intact; informs how the project is framed and positioned.                                                                    |
+| [API_CANDIDATES.md](API_CANDIDATES.md)                         | Three API designs evaluated: definition-object + ctx, builder-chain + middleware (Candidate 2), implicit-context hooks-style.                                                                                                           | **Candidate 2 won.** The shipping API is closure-based with ctx-as-arg and typed middleware.                                         |
+| [PRIOR_ART_AI_ORCHESTRATION.md](PRIOR_ART_AI_ORCHESTRATION.md) | Inventory of Alem Tuzlak + Tom Beckenham's existing generator-based engine in `@tanstack/ai-orchestration` ([TanStack/ai#542](https://github.com/TanStack/ai/pull/542)) — the parent we extracted from.                                 | Engine extracted. AI surface (agents, orchestrators, AG-UI events) stays in `ai-orchestration`.                                      |
+| [SRC_SKEW_AND_RESUMPTION.md](SRC_SKEW_AND_RESUMPTION.md)       | Analysis of fingerprint-based source-skew handling and its gaps (Prettier reformat / minifier drift / silent corruption in patch mode).                                                                                                 | Motivated the move to explicit versioning.                                                                                           |
+| [EXPLICIT_VERSIONING.md](EXPLICIT_VERSIONING.md)               | Alternative design: explicit `version` + `previousVersions` registry + lint-time lock file, replacing runtime fingerprinting.                                                                                                           | **Shipped.** `createWorkflow({ version }).previousVersions([...])` + version-routing engine. Lockfile + ESLint plugin still to come. |
+
+## How these came to be
+
+Generated during the design sprint that preceded the engine extraction. Some of the prose talks about "TanStack Run" — the project was briefly named that before reverting to "TanStack Workflow". Treat that as a footnote.
