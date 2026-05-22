@@ -37,6 +37,10 @@
         {
           "label": "Replay and resume",
           "to": "concepts/replay-and-resume"
+        },
+        {
+          "label": "Scheduling",
+          "to": "concepts/scheduling"
         }
       ]
     }

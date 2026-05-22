@@ -90,4 +90,6 @@ Two pieces:
 
 ## Status
 
-Research only. No package, no recipe, no test. Recommendation: defer until at least one durable storage adapter ships, then design `@tanstack/workflow-cron` against a real Postgres / DO store rather than the in-memory one.
+Research and recipes. See [docs/concepts/scheduling.md](../docs/concepts/scheduling.md) for the user-facing recipes that exercise the "bring your own scheduler" pattern with what's shipping today, and [packages/workflow-core/tests/examples.external-cron.test.ts](../packages/workflow-core/tests/examples.external-cron.test.ts) for a vitest-driven test that proves the pattern works end-to-end (single-tick, skip-overlap, buffer-one).
+
+No `@tanstack/workflow-cron` package yet. Recommendation: defer until at least one durable storage adapter ships, then design against a real Postgres / DO store rather than the in-memory one.
