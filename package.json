@@ -3,21 +3,21 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/TanStack/template.git"
+    "url": "git+https://github.com/TanStack/workflow.git"
   },
   "packageManager": "pnpm@10.33.2",
   "type": "module",
   "scripts": {
     "build": "nx affected --skip-nx-cache --targets=build --exclude=examples/** && size-limit",
     "build:all": "nx run-many --targets=build --exclude=examples/**",
-    "build:core": "nx run-many --targets=build --projects=packages/template",
+    "build:core": "nx run-many --targets=build --projects=@tanstack/workflow-core",
     "changeset": "changeset",
     "changeset:publish": "changeset publish",
     "changeset:version": "changeset version && pnpm install --no-frozen-lockfile && pnpm format",
     "clean": "find . -name 'dist' -type d -prune -exec rm -rf {} +",
     "clean:node_modules": "find . -name 'node_modules' -type d -prune -exec rm -rf {} +",
     "clean:all": "pnpm run clean && pnpm run clean:node_modules",
-    "copy:readme": "cp README.md packages/template/README.md && cp README.md packages/template-devtools/README.md && cp README.md packages/react-template/README.md && cp README.md packages/react-template-devtools/README.md && cp README.md packages/solid-template/README.md && cp README.md packages/solid-template-devtools/README.md",
+    "copy:readme": "true # configured to copy the root README into each package once bindings ship; workflow-core ships a tailored README of its own for now",
     "dev": "pnpm run watch",
     "format": "prettier --experimental-cli --ignore-unknown '**/*' --write",
     "generate-docs": "node scripts/generate-docs.ts && pnpm run copy:readme",
@@ -46,8 +46,8 @@
   },
   "size-limit": [
     {
-      "path": "packages/template/dist/index.js",
-      "limit": "8 KB"
+      "path": "packages/workflow-core/dist/index.js",
+      "limit": "16 KB"
     }
   ],
   "devDependencies": {
@@ -77,11 +77,6 @@
     "vitest": "^4.1.5"
   },
   "overrides": {
-    "@tanstack/template": "workspace:*",
-    "@tanstack/template-devtools": "workspace:*",
-    "@tanstack/react-template": "workspace:*",
-    "@tanstack/react-template-devtools": "workspace:*",
-    "@tanstack/solid-template": "workspace:*",
-    "@tanstack/solid-template-devtools": "workspace:*"
+    "@tanstack/workflow-core": "workspace:*"
   }
 }
