@@ -6,6 +6,11 @@ export type {
   CreateWorkflowConfig,
   WorkflowBuilder,
 } from './define/define-workflow'
+export { createWorkflowFactory } from './define/create-workflow-factory'
+export type {
+  CreateWorkflowFactoryConfig,
+  WorkflowFactoryBuilder,
+} from './define/create-workflow-factory'
 
 // ===== Middleware =====
 export { createMiddleware } from './middleware/create-middleware'

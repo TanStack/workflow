@@ -48,7 +48,7 @@ for await (const event of runWorkflow({
 | `ctx.now()` / `ctx.uuid()`             | `Promise<number / string>` | deterministic recorded values                                 |
 | `ctx.emit(name, value)`                | `void`                     | observability-only custom event                               |
 
-Middleware can add more.
+Middleware can add more. Use [`createWorkflowFactory`](../../docs/concepts/middleware.md#recipe-share-middleware-across-a-family-of-workflows) to pin shared middleware and step-retry defaults across a family of workflows.
 
 ## Pause and resume
 
