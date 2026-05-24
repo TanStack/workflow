@@ -33,10 +33,9 @@ describe('signal delivery idempotency', () => {
     )
     expect(first.find((e) => e.type === 'RUN_FINISHED')).toBeDefined()
 
-    // Replay the SAME signalId. After the run finished + was cleaned
-    // up, the second delivery sees no run state, which surfaces as
-    // run_lost. Demonstrates that the same signalId doesn't double-
-    // resolve.
+    // Replay the SAME signalId after the run has finished. Terminal
+    // runs are retained through the store TTL, so a retry degrades to
+    // an attach snapshot instead of driving the workflow again.
     const second = await collect(
       runWorkflow({
         workflow: wf,
@@ -49,9 +48,10 @@ describe('signal delivery idempotency', () => {
         runStore: store,
       }),
     )
-    expect(second.find((e) => e.type === 'RUN_ERRORED')).toMatchObject({
-      code: 'run_lost',
+    expect(second.find((e) => e.type === 'RUN_FINISHED')).toMatchObject({
+      output: { payload: { ok: true } },
     })
+    expect(second.find((e) => e.type === 'RUN_ERRORED')).toBeUndefined()
   })
 
   it('two different signalIds racing for the same pause: first wins, second is lost', async () => {

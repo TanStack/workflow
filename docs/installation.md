@@ -1,10 +1,10 @@
 # Installation
 
 ```bash
-pnpm add @tanstack/workflow-core zod
+pnpm add @tanstack/workflow-core
 ```
 
-`zod` is a peer requirement only if you use `input` / `output` / `state` / `waitForEvent({ schema })` validation. Any [Standard Schema](https://github.com/standard-schema/standard-schema) library works.
+Install `zod` or another [Standard Schema](https://github.com/standard-schema/standard-schema) library if you use `input` / `output` / `state` / `waitForEvent({ schema })` validation.
 
 ## Storage
 

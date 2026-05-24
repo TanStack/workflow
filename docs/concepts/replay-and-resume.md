@@ -12,6 +12,10 @@ Append-only. Optimistic-CAS on `expectedNextIndex`. Stored via `RunStore.appendE
 - `NOW_RECORDED` / `UUID_RECORDED`
 - `RUN_FINISHED` / `RUN_ERRORED`
 
+**Coordination events** — persisted so hosts and resume calls can identify the pending wait:
+- `SIGNAL_AWAITED`
+- `APPROVAL_REQUESTED`
+
 **Observability-only events** — emit-only, not persisted:
 - `RUN_STARTED`, `STEP_STARTED`
 - `STATE_DELTA`
@@ -120,7 +124,7 @@ Same engine. One invocation drives the run to its next pause or completion. The 
 
 ## Cleanup
 
-`RunStore.deleteRun(runId, reason)` fires automatically on `finished` / `errored` / `aborted`. Paused runs persist until the host cleans them up or a TTL expires (in-memory store: 1h default).
+Terminal runs remain in the store so attach calls and webhook retries can read the final log. Stores decide their retention policy; the in-memory store expires non-paused runs after its TTL (1h default). Hosts can still call `RunStore.deleteRun(runId, reason)` when they want immediate cleanup.
 
 ## What the log contains, end to end
 

@@ -24,6 +24,18 @@ export function findRunId(events: ReadonlyArray<WorkflowEvent>): string {
   return started.runId
 }
 
+/** Pull the approvalId off the first APPROVAL_REQUESTED event. */
+export function findApprovalId(events: ReadonlyArray<WorkflowEvent>): string {
+  const requested = events.find(
+    (e): e is Extract<WorkflowEvent, { type: 'APPROVAL_REQUESTED' }> =>
+      e.type === 'APPROVAL_REQUESTED',
+  )
+  if (!requested) {
+    throw new Error('findApprovalId: no APPROVAL_REQUESTED event in stream')
+  }
+  return requested.approvalId
+}
+
 /**
  * Simulate a process restart. In the closure engine every resume is
  * already a fresh replay from the persisted log — there's no in-

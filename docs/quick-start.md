@@ -1,6 +1,6 @@
 # Quick start
 
-Copy-paste recipes. Each block runs as-is against `@tanstack/workflow-core` + `zod`.
+Minimal recipes for `@tanstack/workflow-core` + `zod`. Snippets use small local helpers like `collect(...)` and `findRunId(...)` when they need to drain an event stream.
 
 ## Install
 
@@ -56,13 +56,14 @@ const order = createWorkflow({
 const store = inMemoryRunStore()
 const start = await collect(runWorkflow({ workflow: order, input: { amount: 1500 }, runStore: store }))
 const runId = findRunId(start)
+const approvalId = start.find((e) => e.type === 'APPROVAL_REQUESTED')!.approvalId
 
 // Resume — same workflow, same runStore, new approval delivery
 await collect(runWorkflow({
   workflow: order,
   runId,
   runStore: store,
-  approval: { approvalId: 'a-1', approved: true },
+  approval: { approvalId, approved: true },
 }))
 ```
 
@@ -126,11 +127,13 @@ const v2 = createWorkflow({ id: 'pipeline', version: 'v2' })
   .handler(async (ctx) => { /* v2 body */ })
 
 // Engine reads workflowVersion from RunState and routes to the matching code.
+// startEvents are the events from the original v1 run.
+const approvalId = startEvents.find((e) => e.type === 'APPROVAL_REQUESTED')!.approvalId
 await collect(runWorkflow({
   workflow: v2,                // current version
   runId,                       // started under v1
   runStore: store,
-  approval: { approvalId: 'a-1', approved: true },
+  approval: { approvalId, approved: true },
 }))
 ```
 

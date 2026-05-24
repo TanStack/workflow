@@ -43,9 +43,12 @@ export interface SerializedError {
  *     STEP_FAILED, SIGNAL_RESOLVED, APPROVAL_RESOLVED, NOW_RECORDED,
  *     UUID_RECORDED, RUN_FINISHED, RUN_ERRORED.
  *
+ *   - **Coordination events** — persisted so hosts and resume calls
+ *     can identify the pending wait. SIGNAL_AWAITED,
+ *     APPROVAL_REQUESTED.
+ *
  *   - **Observability events** — engine emits but replay ignores.
- *     RUN_STARTED, STEP_STARTED, SIGNAL_AWAITED, APPROVAL_REQUESTED,
- *     STATE_DELTA, CUSTOM.
+ *     RUN_STARTED, STEP_STARTED, STATE_DELTA, CUSTOM.
  *
  * The optional `audience` field is engine-ignored. Adapters/views
  * (e.g., a Durable Streams projection layer) may filter on it to
@@ -308,6 +311,16 @@ export type ReservedCtxFields =
   | 'now'
   | 'uuid'
   | 'emit'
+
+/** Compile-time guard for middleware extensions. Resolves to `TExt`
+ *  when no reserved ctx field is shadowed; otherwise resolves to a
+ *  readable string literal error. */
+export type AssertNonReservedExtension<TExt> = keyof TExt &
+  ReservedCtxFields extends never
+  ? TExt
+  : `Middleware extension may not shadow reserved ctx field: ${keyof TExt &
+      ReservedCtxFields &
+      string}`
 
 /** Full ctx type passed to a handler, including middleware-added
  *  fields. `TExtensions` defaults to `unknown` so the empty-middleware

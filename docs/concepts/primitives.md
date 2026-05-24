@@ -45,10 +45,11 @@ await ctx.sleepUntil(nextMidnight()) // wake at a wall-clock time
 Pause until the host delivers a signal with this `name`. Returns the payload.
 
 ```ts
+const now = await ctx.now()
 const payload = await ctx.waitForEvent('webhook-received', {
   schema: z.object({ reference: z.string() }),
-  meta: { source: 'stripe' },        // visible to the host driver
-  deadline: Date.now() + 86_400_000, // host wakes if not delivered
+  meta: { source: 'stripe' },     // visible to the host driver
+  deadline: now + 86_400_000,     // host wakes if not delivered
 })
 ```
 
@@ -100,23 +101,6 @@ Run-level `AbortSignal`. Already-aborted state propagates to `step` fns via `ste
 ```ts
 await ctx.step('long-fetch', (stepCtx) =>
   fetch(url, { signal: stepCtx.signal }),
-)
-```
-
-## `retry(fn, opts)`
-
-Library-level helper for retrying a **composite** of multiple yields. Prefer `ctx.step({ retry })` for single steps.
-
-```ts
-import { retry } from '@tanstack/workflow-core'
-
-await retry(
-  async () => {
-    const a = await ctx.step('a', fetchA)
-    const b = await ctx.step('b', () => fetchB(a))
-    return { a, b }
-  },
-  { attempts: 3, backoff: 'exponential' },
 )
 ```
 

@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createWorkflow, inMemoryRunStore, runWorkflow } from '../src'
-import { collect, findRunId } from './test-utils'
+import { collect, findApprovalId, findRunId } from './test-utils'
 
 interface PlanStep {
   id: string
@@ -125,7 +125,7 @@ describe('example: Kyle aiAgent workflow ported to closure API', () => {
         workflow: wf,
         runId,
         approval: {
-          approvalId: 'a-1',
+          approvalId: findApprovalId(phase1),
           approved: false,
           feedback: 'too risky',
         },
@@ -155,7 +155,7 @@ describe('example: Kyle aiAgent workflow ported to closure API', () => {
       runWorkflow({
         workflow: wf,
         runId,
-        approval: { approvalId: 'a-1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )
@@ -223,7 +223,7 @@ describe('example: Kyle aiAgent workflow ported to closure API', () => {
       runWorkflow({
         workflow: wf,
         runId,
-        approval: { approvalId: 'a-1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )

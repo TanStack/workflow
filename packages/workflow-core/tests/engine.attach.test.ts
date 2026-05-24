@@ -57,11 +57,6 @@ describe('attach — paused run', () => {
 
 describe('attach — finished run', () => {
   it('replays the log and ends with RUN_FINISHED carrying the output', async () => {
-    // Note: in the current engine, `deleteRun(runId, 'finished')` clears
-    // the log immediately, so we attach AFTER the run finishes via a
-    // store that retains the log. We test the in-flight path by
-    // attaching while paused above. The "finished" path is covered by
-    // the seed test below where we attach to a still-resident run.
     const wf = createWorkflow({
       id: 'attach-finished',
       input: z.object({}).default({}),
@@ -85,8 +80,8 @@ describe('attach — finished run', () => {
     const attached = await collect(
       runWorkflow({ workflow: wf, runId, attach: true, runStore: store }),
     )
-    expect(attached.find((e) => e.type === 'RUN_ERRORED')).toMatchObject({
-      code: 'run_lost',
+    expect(attached.find((e) => e.type === 'RUN_FINISHED')).toMatchObject({
+      output: { value: 42 },
     })
   })
 })

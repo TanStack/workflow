@@ -2,7 +2,6 @@
 export { createWorkflow } from './define/define-workflow'
 export type {
   AccumulateExtensions,
-  AssertNonReservedExtension,
   CreateWorkflowConfig,
   WorkflowBuilder,
 } from './define/define-workflow'
@@ -51,6 +50,7 @@ export type {
   AnyWorkflowDefinition,
   ApprovalResult,
   ApproveOptions,
+  AssertNonReservedExtension,
   BaseCtx,
   CheckpointEvent,
   Ctx,

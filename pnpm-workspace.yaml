@@ -3,7 +3,6 @@ linkWorkspacePackages: true
 preferWorkspacePackages: true
 
 packages:
-  - 'examples/**/*'
-  - 'packages/*'
+  - 'packages/workflow-core'
 onlyBuiltDependencies:
   - esbuild

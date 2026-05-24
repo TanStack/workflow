@@ -43,6 +43,15 @@
           "to": "concepts/scheduling"
         }
       ]
+    },
+    {
+      "label": "API Reference",
+      "children": [
+        {
+          "label": "workflow-core",
+          "to": "reference/index"
+        }
+      ]
     }
   ]
 }

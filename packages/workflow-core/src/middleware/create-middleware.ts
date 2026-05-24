@@ -1,4 +1,8 @@
-import type { Middleware, MiddlewareServerFn } from '../types'
+import type {
+  AssertNonReservedExtension,
+  Middleware,
+  MiddlewareServerFn,
+} from '../types'
 
 export interface CreateMiddlewareBuilder<TCtxIn> {
   /**
@@ -7,15 +11,15 @@ export interface CreateMiddlewareBuilder<TCtxIn> {
    * fields to merge into the ctx for downstream middleware and the
    * handler.
    *
-   *     const requireUser = createMiddleware().server(async (ctx, next) => {
+   *     const requireUser = createMiddleware().server(async ({ next }) => {
    *       const user = await loadUser()
    *       if (!user) throw new Error('unauthorized')
-   *       return next({ user })   // ctx is now `ctx & { user: User }`
+   *       return next({ context: { user } })
    *     })
    */
   server: <TExtension>(
-    fn: MiddlewareServerFn<TCtxIn, TExtension>,
-  ) => Middleware<TCtxIn, TExtension>
+    fn: MiddlewareServerFn<TCtxIn, AssertNonReservedExtension<TExtension>>,
+  ) => Middleware<TCtxIn, AssertNonReservedExtension<TExtension>>
 }
 
 /**
@@ -23,10 +27,10 @@ export interface CreateMiddlewareBuilder<TCtxIn> {
  * accumulation makes the extension visible to downstream middleware
  * and the handler.
  *
- *     const traced = createMiddleware().server(async (ctx, next) => {
+ *     const traced = createMiddleware().server(async ({ ctx, next }) => {
  *       const trace = startTrace(ctx.runId)
  *       try {
- *         return await next({ trace })
+ *         return await next({ context: { trace } })
  *       } finally {
  *         trace.end()
  *       }
@@ -35,7 +39,7 @@ export interface CreateMiddlewareBuilder<TCtxIn> {
  * For middleware that should compose on top of an already-extended
  * ctx, type the generic explicitly:
  *
- *     createMiddleware<{ user: User }>().server(async (ctx, next) => {
+ *     createMiddleware<{ user: User }>().server(async ({ ctx, next }) => {
  *       // ctx.user is typed
  *     })
  */

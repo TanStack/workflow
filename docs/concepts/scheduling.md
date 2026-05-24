@@ -215,7 +215,7 @@ async function tickAllSchedules(schedules: Array<Schedule>, runStore: RunStore) 
 setInterval(() => tickAllSchedules(schedules, runStore), 30_000)
 ```
 
-A more durable version persists `nextFireAt` alongside each schedule definition; a deeper one elects a single leader to avoid duplicate ticks across instances. That whole layer is what a future `@tanstack/workflow-cron` package would provide — see [research/SCHEDULING.md](../../research/SCHEDULING.md) for the design sketch.
+A more durable version persists `nextFireAt` alongside each schedule definition; a deeper one elects a single leader to avoid duplicate ticks across instances. That whole layer is what a future `@tanstack/workflow-cron` package would provide. The design sketch lives in [`research/SCHEDULING.md`](https://github.com/TanStack/workflow/blob/main/research/SCHEDULING.md).
 
 ## Test pattern
 
