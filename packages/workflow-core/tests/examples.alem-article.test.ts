@@ -28,7 +28,7 @@ import {
   succeed,
 } from '../src'
 import type { WorkflowOutput } from '../src'
-import { collect, findRunId } from './test-utils'
+import { collect, findApprovalId, findRunId } from './test-utils'
 
 // ============================================================
 // Schemas — direct ports from Alem's article-workflow.ts
@@ -186,7 +186,7 @@ describe('example: Alem article workflow ported to closure API', () => {
       runWorkflow({
         workflow: wf,
         runId,
-        approval: { approvalId: 'a-1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )
@@ -244,7 +244,7 @@ describe('example: Alem article workflow ported to closure API', () => {
         workflow: wf,
         runId,
         approval: {
-          approvalId: 'a-1',
+          approvalId: findApprovalId(phase1),
           approved: false,
           feedback: 'Make it punchier',
         },
@@ -260,7 +260,7 @@ describe('example: Alem article workflow ported to closure API', () => {
       runWorkflow({
         workflow: wf,
         runId,
-        approval: { approvalId: 'a-2', approved: true },
+        approval: { approvalId: findApprovalId(phase2), approved: true },
         runStore: store,
       }),
     )

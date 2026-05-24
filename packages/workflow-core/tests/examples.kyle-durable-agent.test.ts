@@ -27,7 +27,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createWorkflow, inMemoryRunStore, runWorkflow } from '../src'
-import { collect, findRunId } from './test-utils'
+import { collect, findApprovalId, findRunId } from './test-utils'
 
 // ============================================================
 // Tool definitions — what the agent can do
@@ -287,7 +287,7 @@ describe('example: Kyle durable-agent pattern on top of workflow-core', () => {
       runWorkflow({
         workflow: wf,
         runId,
-        approval: { approvalId: 'a-1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )
@@ -333,7 +333,7 @@ describe('example: Kyle durable-agent pattern on top of workflow-core', () => {
         workflow: wf,
         runId,
         approval: {
-          approvalId: 'a-1',
+          approvalId: findApprovalId(phase1),
           approved: false,
           feedback: 'do not send',
         },

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createWorkflow, inMemoryRunStore, runWorkflow } from '../src'
-import { collect, findRunId, simulateRestart } from './test-utils'
+import {
+  collect,
+  findApprovalId,
+  findRunId,
+  simulateRestart,
+} from './test-utils'
 
 describe('ctx.step()', () => {
   it('runs fn once and persists STEP_FINISHED with the result', async () => {
@@ -75,7 +80,7 @@ describe('ctx.step()', () => {
       runWorkflow({
         workflow: wf,
         runId,
-        approval: { approvalId: 'a1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )
@@ -125,7 +130,7 @@ describe('ctx.step()', () => {
       runWorkflow({
         workflow: wf,
         runId,
-        approval: { approvalId: 'a1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )
@@ -168,7 +173,7 @@ describe('ctx.now()', () => {
       runWorkflow({
         workflow: wf,
         runId,
-        approval: { approvalId: 'a1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )
@@ -211,7 +216,7 @@ describe('ctx.uuid()', () => {
       runWorkflow({
         workflow: wf,
         runId,
-        approval: { approvalId: 'a1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )

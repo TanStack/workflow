@@ -21,7 +21,7 @@ import type {
   WorkflowOutput,
   WorkflowState,
 } from '../src'
-import { collect, findRunId } from './test-utils'
+import { collect, findApprovalId, findRunId } from './test-utils'
 
 // ============================================================
 // The "AI can write this with zero annotations" example.
@@ -338,7 +338,7 @@ describe('inference — example order workflow runs end-to-end', () => {
       runWorkflow({
         workflow: order,
         runId,
-        approval: { approvalId: 'a-1', approved: true },
+        approval: { approvalId: findApprovalId(phase2), approved: true },
         runStore: store,
       }),
     )

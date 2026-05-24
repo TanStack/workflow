@@ -57,13 +57,16 @@ Middleware can add more.
 const store = inMemoryRunStore()
 const phase1 = await collect(runWorkflow({ workflow, input, runStore: store }))
 const runId = findRunId(phase1)
+const approvalId = phase1.find(
+  (e) => e.type === 'APPROVAL_REQUESTED',
+)!.approvalId
 
 await collect(
   runWorkflow({
     workflow,
     runId,
     runStore: store,
-    approval: { approvalId: 'a-1', approved: true },
+    approval: { approvalId, approved: true },
     // — or —
     signalDelivery: {
       signalId: 'evt-1',

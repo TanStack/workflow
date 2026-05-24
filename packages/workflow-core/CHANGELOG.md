@@ -1,5 +1,11 @@
 # @tanstack/workflow-core
 
+## 0.0.2
+
+### Patch Changes
+
+- Harden workflow runtime validation and delivery matching, retain terminal run logs, and align docs/tooling with workflow-core.
+
 ## 0.0.1
 
 ### Patch Changes

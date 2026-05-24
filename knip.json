@@ -1,13 +1,14 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignoreDependencies": [
-    "@faker-js/faker",
-    "@tanstack/template",
-    "@tanstack/template-devtools"
+  "ignore": [
+    "examples/**",
+    "packages/react-template*/**",
+    "packages/solid-template*/**",
+    "packages/template*/**"
   ],
-  "ignoreWorkspaces": ["examples/**"],
+  "ignoreDependencies": ["@faker-js/faker"],
   "workspaces": {
-    "packages/react-template": {
+    "packages/workflow-core": {
       "ignore": []
     }
   }

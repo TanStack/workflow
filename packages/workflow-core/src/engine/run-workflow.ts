@@ -128,6 +128,8 @@ interface DriveOptions extends RunWorkflowOptions {
   emit: (event: WorkflowEvent) => void
 }
 
+type DeliveryLostCode = 'signal_lost' | 'approval_lost'
+
 async function drive(options: DriveOptions): Promise<void> {
   if (options.runId && options.attach) {
     await attachRun(options)
@@ -168,14 +170,28 @@ async function startRun(options: DriveOptions): Promise<void> {
 
   // Validate + build initial state. State itself is NOT persisted;
   // it's reconstructed on every invocation by replay.
-  const state = buildInitialState(workflow, options.input)
+  let input: unknown
+  let state: Record<string, unknown>
+  try {
+    input = validateWorkflowInput(workflow, options.input)
+    state = buildInitialState(workflow, input)
+  } catch (err) {
+    emit({
+      type: 'RUN_ERRORED',
+      ts: Date.now(),
+      runId,
+      error: serializeError(err),
+      code: 'validation_error',
+    })
+    return
+  }
 
   const runState: RunState = {
     runId,
     status: 'running',
     workflowId: workflow.id,
     workflowVersion: workflow.version,
-    input: options.input,
+    input,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   }
@@ -195,7 +211,7 @@ async function startRun(options: DriveOptions): Promise<void> {
     options,
     runId,
     runState,
-    input: options.input,
+    input,
     state,
     history: [],
     abortController,
@@ -219,6 +235,14 @@ async function resumeRun(options: DriveOptions): Promise<void> {
       error: { name: 'RunLost', message: `Run ${runId} not found.` },
       code: 'run_lost',
     })
+    return
+  }
+  if (
+    persistedState.status === 'finished' ||
+    persistedState.status === 'errored' ||
+    persistedState.status === 'aborted'
+  ) {
+    await attachRun({ ...options, attach: true })
     return
   }
 
@@ -258,10 +282,13 @@ async function resumeRun(options: DriveOptions): Promise<void> {
       ts: Date.now(),
       runId,
       error: {
-        name: 'SignalLost',
-        message: `Signal delivery lost: another delivery won the race.`,
+        name:
+          seedAppendOutcome.code === 'approval_lost'
+            ? 'ApprovalLost'
+            : 'SignalLost',
+        message: seedAppendOutcome.message,
       },
-      code: 'signal_lost',
+      code: seedAppendOutcome.code,
     })
     return
   }
@@ -275,6 +302,8 @@ async function resumeRun(options: DriveOptions): Promise<void> {
     ...persistedState,
     status: 'running',
     workflowVersion: effectiveWorkflow.version,
+    waitingFor: undefined,
+    pendingApproval: undefined,
     updatedAt: Date.now(),
   }
   await runStore.setRunState(runId, runState)
@@ -330,8 +359,11 @@ async function attachRun(options: DriveOptions): Promise<void> {
   // history without polling.
   const events = await runStore.getEvents(runId)
   for (const event of events) emit(event)
+  const hasPersistedTerminal = events.some(
+    (event) => event.type === 'RUN_FINISHED' || event.type === 'RUN_ERRORED',
+  )
 
-  if (persistedState.status === 'finished') {
+  if (persistedState.status === 'finished' && !hasPersistedTerminal) {
     emit({
       type: 'RUN_FINISHED',
       ts: Date.now(),
@@ -341,8 +373,8 @@ async function attachRun(options: DriveOptions): Promise<void> {
     return
   }
   if (
-    persistedState.status === 'errored' ||
-    persistedState.status === 'aborted'
+    !hasPersistedTerminal &&
+    (persistedState.status === 'errored' || persistedState.status === 'aborted')
   ) {
     emit({
       type: 'RUN_ERRORED',
@@ -436,6 +468,7 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
       ctx,
       workflow.handler,
     )
+    output = validateWorkflowOutput(workflow, output)
     // Flush any final state delta.
     flushStateDelta(engine)
   } catch (err) {
@@ -467,7 +500,6 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
         emit,
         errEvent,
       )
-      await runStore.deleteRun(runId, 'aborted')
       return
     }
 
@@ -483,7 +515,6 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
       code: 'error',
     }
     await emitAndAppend(runStore, runId, engine.nextLogIndex++, emit, errEvent)
-    await runStore.deleteRun(runId, 'errored')
     return
   }
 
@@ -506,7 +537,6 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
     emit,
     finishedEvent,
   )
-  await runStore.deleteRun(runId, 'finished')
 }
 
 // ============================================================
@@ -580,13 +610,7 @@ async function engineStep<T>(
   }
 
   // Fresh execution.
-  await emitAndAppend(
-    engine.runStore,
-    engine.runId,
-    engine.nextLogIndex++,
-    engine.emit,
-    { type: 'STEP_STARTED', ts: Date.now(), stepId },
-  )
+  engine.emit({ type: 'STEP_STARTED', ts: Date.now(), stepId })
 
   const startedAt = Date.now()
   const retryPolicy = options?.retry ?? engine.workflow.defaultStepRetry
@@ -789,6 +813,7 @@ async function engineWaitForEvent<TPayload>(
         deadline: options?.deadline,
         meta: options?.meta,
       },
+      pendingApproval: undefined,
       updatedAt: Date.now(),
     })
   }
@@ -852,6 +877,7 @@ async function engineApprove(
     await engine.runStore.setRunState(engine.runId, {
       ...persisted,
       status: 'paused',
+      waitingFor: undefined,
       pendingApproval: {
         approvalId,
         title: approveOptions.title,
@@ -913,6 +939,21 @@ async function engineUuid(engine: EngineRuntime): Promise<string> {
 // Middleware composition
 // ============================================================
 
+const reservedCtxFields = new Set([
+  'runId',
+  'input',
+  'state',
+  'signal',
+  'step',
+  'sleep',
+  'sleepUntil',
+  'waitForEvent',
+  'approve',
+  'now',
+  'uuid',
+  'emit',
+])
+
 function composeMiddlewares(
   middlewares: ReadonlyArray<AnyMiddleware>,
   ctx: Ctx<any, any, any>,
@@ -937,6 +978,13 @@ function composeMiddlewares(
         // ctx, so writes here are visible there.
         const ext = opts.context
         if (ext && typeof ext === 'object') {
+          for (const key of Object.keys(ext)) {
+            if (reservedCtxFields.has(key)) {
+              throw new Error(
+                `Middleware extension may not shadow reserved ctx field: ${key}`,
+              )
+            }
+          }
           Object.assign(ctx, ext)
         }
         returned = await compose(index + 1)
@@ -961,6 +1009,30 @@ function setupAbort(external?: AbortSignal): AbortController {
   return ctrl
 }
 
+function validateWorkflowInput(
+  workflow: AnyWorkflowDefinition,
+  input: unknown,
+): unknown {
+  if (!workflow.inputSchema) return input
+  return validateSyncSchema(
+    workflow.inputSchema,
+    input,
+    `Workflow "${workflow.id}" input`,
+  )
+}
+
+function validateWorkflowOutput(
+  workflow: AnyWorkflowDefinition,
+  output: unknown,
+): unknown {
+  if (!workflow.outputSchema) return output
+  return validateSyncSchema(
+    workflow.outputSchema,
+    output,
+    `Workflow "${workflow.id}" output`,
+  )
+}
+
 function buildInitialState(
   workflow: AnyWorkflowDefinition,
   input: unknown,
@@ -969,18 +1041,28 @@ function buildInitialState(
     ? workflow.initialize({ input: input as never })
     : {}
   if (!workflow.stateSchema) return initial
-  const validated = workflow.stateSchema['~standard'].validate(initial)
+  return validateSyncSchema(
+    workflow.stateSchema,
+    initial,
+    `Workflow "${workflow.id}" initial state`,
+  ) as Record<string, unknown>
+}
+
+function validateSyncSchema(
+  schema: NonNullable<AnyWorkflowDefinition['inputSchema']>,
+  value: unknown,
+  label: string,
+): unknown {
+  const validated = schema['~standard'].validate(value)
   if (validated instanceof Promise) {
     throw new Error(
-      `Workflow "${workflow.id}" state schema validates asynchronously, which is not supported.`,
+      `${label} schema validates asynchronously, which is not supported.`,
     )
   }
   if (validated.issues) {
-    throw new Error(
-      `Workflow "${workflow.id}" initial state failed schema validation.`,
-    )
+    throw new Error(`${label} failed schema validation.`)
   }
-  return validated.value as Record<string, unknown>
+  return validated.value
 }
 
 function selectVersionForRun(
@@ -1078,9 +1160,9 @@ function generateId(prefix: string): string {
 // Seed delivery for resume
 // ============================================================
 
-interface SeedAppendOutcome {
-  kind: 'appended' | 'idempotent' | 'lost'
-}
+type SeedAppendOutcome =
+  | { kind: 'appended' | 'idempotent' }
+  | { kind: 'lost'; code: DeliveryLostCode; message: string }
 
 async function appendSeed(args: {
   runStore: RunStore
@@ -1091,9 +1173,24 @@ async function appendSeed(args: {
   approval?: ApprovalResult
   emit: (event: WorkflowEvent) => void
 }): Promise<SeedAppendOutcome> {
-  const { runStore, runId, history, signalDelivery, approval, emit } = args
+  const {
+    runStore,
+    runId,
+    history,
+    persistedState,
+    signalDelivery,
+    approval,
+    emit,
+  } = args
 
   if (signalDelivery) {
+    if (persistedState.waitingFor?.signalName !== signalDelivery.name) {
+      return {
+        kind: 'lost',
+        code: 'signal_lost',
+        message: `Signal delivery lost: run is not waiting for "${signalDelivery.name}".`,
+      }
+    }
     // Locate the most recent SIGNAL_AWAITED for this name. The
     // resolution attached to that await is what the caller is
     // racing against.
@@ -1116,7 +1213,11 @@ async function appendSeed(args: {
           }
           // A different writer's resolution already landed —
           // this caller lost the race.
-          return { kind: 'lost' }
+          return {
+            kind: 'lost',
+            code: 'signal_lost',
+            message: 'Signal delivery lost: another delivery won the race.',
+          }
         }
       }
     }
@@ -1147,13 +1248,24 @@ async function appendSeed(args: {
             return { kind: 'idempotent' }
           }
         }
-        return { kind: 'lost' }
+        return {
+          kind: 'lost',
+          code: 'signal_lost',
+          message: 'Signal delivery lost: another delivery won the race.',
+        }
       }
       throw err
     }
   }
 
   if (approval) {
+    if (persistedState.pendingApproval?.approvalId !== approval.approvalId) {
+      return {
+        kind: 'lost',
+        code: 'approval_lost',
+        message: `Approval delivery lost: run is not waiting for approval "${approval.approvalId}".`,
+      }
+    }
     const event: WorkflowEvent = {
       type: 'APPROVAL_RESOLVED',
       ts: Date.now(),
@@ -1178,7 +1290,11 @@ async function appendSeed(args: {
             return { kind: 'idempotent' }
           }
         }
-        return { kind: 'lost' }
+        return {
+          kind: 'lost',
+          code: 'approval_lost',
+          message: 'Approval delivery lost: another delivery won the race.',
+        }
       }
       throw err
     }

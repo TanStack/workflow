@@ -4,7 +4,6 @@ import type {
   Ctx,
   InferSchema,
   Middleware,
-  ReservedCtxFields,
   SchemaInput,
   StepRetryOptions,
   WorkflowDefinition,
@@ -36,18 +35,6 @@ export type AccumulateExtensions<
     ? TExtension
     : never
 >
-
-/**
- * Compile-time guard that a middleware's added fields don't shadow
- * the built-in ctx surface. Resolves to `Middleware<TCtxIn, TExt>`
- * when the extension is safe, or to a TS error type when not.
- */
-export type AssertNonReservedExtension<TExt> = keyof TExt &
-  ReservedCtxFields extends never
-  ? TExt
-  : `Middleware extension may not shadow reserved ctx field: ${keyof TExt &
-      ReservedCtxFields &
-      string}`
 
 // ============================================================
 // Public configuration shape

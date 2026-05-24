@@ -7,11 +7,11 @@ id: contributing
 
 ## Questions
 
-If you have questions about implementation details, help or support, then please use our dedicated community forum at [Github Discussions](https://github.com/tanstack/template/discussions) **PLEASE NOTE:** If you choose to instead open an issue for your question, your issue will be immediately closed and redirected to the forum.
+If you have questions about implementation details, help, or support, use [GitHub Discussions](https://github.com/tanstack/workflow/discussions). Issues should be reserved for reproducible bugs and concrete feature requests.
 
 ## Reporting Issues
 
-If you have found what you think is a bug, please [file an issue](https://github.com/tanstack/template/issues/new). **PLEASE NOTE:** Issues that are identified as implementation questions or non-issues will be immediately closed and redirected to [Github Discussions](https://github.com/tanstack/template/discussions)
+If you have found what you think is a bug, please [file an issue](https://github.com/tanstack/workflow/issues/new) with a minimal reproduction and the expected behavior.
 
 ## Suggesting new features
 
@@ -27,7 +27,7 @@ Before proceeding with development, ensure you match one of the following criter
 
 ## Development Workflow
 
-- Fork this repository, we prefer the `feat-*` branch name style
+- Fork this repository; we prefer the `feat-*` branch name style
 - Ensure you have `pnpm` installed
 - Install projects dependencies and linkages by running `pnpm install`
 - Auto-build and auto-test files as you edit by running `pnpm dev`

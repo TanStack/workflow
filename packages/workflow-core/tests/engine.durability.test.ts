@@ -12,7 +12,12 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createWorkflow, inMemoryRunStore, runWorkflow } from '../src'
-import { collect, findRunId, simulateRestart } from './test-utils'
+import {
+  collect,
+  findApprovalId,
+  findRunId,
+  simulateRestart,
+} from './test-utils'
 
 describe('engine durability', () => {
   it('does not re-execute step fns on replay', async () => {
@@ -45,7 +50,7 @@ describe('engine durability', () => {
       runWorkflow({
         workflow: wf,
         runId,
-        approval: { approvalId: 'a1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )
@@ -89,7 +94,7 @@ describe('engine durability', () => {
       runWorkflow({
         workflow: wf,
         runId,
-        approval: { approvalId: 'a1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )
@@ -132,7 +137,7 @@ describe('engine durability', () => {
       runWorkflow({
         workflow: v2,
         runId,
-        approval: { approvalId: 'a1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )
@@ -179,7 +184,7 @@ describe('engine durability', () => {
       runWorkflow({
         workflow: v2,
         runId,
-        approval: { approvalId: 'a1', approved: true },
+        approval: { approvalId: findApprovalId(phase1), approved: true },
         runStore: store,
       }),
     )
