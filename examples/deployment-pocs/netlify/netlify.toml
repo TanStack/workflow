@@ -1,0 +1,12 @@
+[build]
+  publish = "public"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[functions."timer-sweep"]
+  schedule = "* * * * *"
+
+[functions."scheduled-digest"]
+  schedule = "*/5 * * * *"

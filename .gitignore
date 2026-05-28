@@ -24,6 +24,8 @@ coverage
 .env.test.local
 .env.production.local
 .next
+.netlify
+.vercel
 .svelte-kit
 
 # developer-specific VS Code config files

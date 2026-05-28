@@ -1,10 +1,40 @@
 # Scheduling and recurring runs
 
-`@tanstack/workflow-core` ships no cron primitive. The shape every mature workflow engine converges on — Inngest, Trigger.dev, Temporal, Hatchet, DBOS — is **external scheduler + fresh workflow invocation per tick**. Bring your own scheduler. The engine doesn't need to know.
+`@tanstack/workflow-core` ships no cron daemon. The shape every mature workflow
+engine converges on is **external scheduler + durable store + bounded wake-up**.
+The JavaScript engine should not stay alive just because a workflow is waiting.
 
-This page is recipes for that pattern.
+TanStack Workflow now has two scheduling layers:
 
-## The model in one paragraph
+- `@tanstack/workflow-core`: low-level engine recipes where you bring your own
+  scheduler and call `runWorkflow`.
+- `@tanstack/workflow-runtime`: registered schedules, timer indexes, schedule
+  materialization, and bounded `runtime.sweep()` calls.
+
+For the production runtime model, start with the
+[Scheduling section in the Guide](../guide/index.md#wake-timers-and-schedules)
+and the [Deployment guide](../guide/deployment.md). This page keeps the
+low-level core recipes because they are still useful when embedding the engine
+directly.
+
+## The runtime model in one paragraph
+
+You register schedules in `defineWorkflowRuntime`. A host cron or scheduled
+function calls the runtime sweep. The sweep materializes due schedules, starts
+fresh deterministic runs for due schedule buckets, claims due timers, and resumes
+sleeping workflows by delivering the internal `__timer` signal. The store is the
+source of truth; cron is only a wake-up tick.
+
+```ts
+await workflowRuntime.sweep({
+  maxScheduledRuns: 25,
+  maxTimers: 25,
+  maxDurationMs: 55_000,
+  includeEvents: false,
+})
+```
+
+## The core model in one paragraph
 
 You declare a normal workflow. Something outside the engine (cron daemon, EventBridge, Durable Object alarm, Vercel Cron Job, a `setInterval` in a worker, anything) fires on schedule. Each tick calls `runWorkflow({ workflow, input, runStore })` with fresh input. The workflow runs end-to-end and finishes; the next tick is a new `runId`. No "loop forever with sleep" — log doesn't grow, replay cost is constant, and "when's the next run?" is answerable from the scheduler, not from the engine.
 
@@ -215,7 +245,11 @@ async function tickAllSchedules(schedules: Array<Schedule>, runStore: RunStore) 
 setInterval(() => tickAllSchedules(schedules, runStore), 30_000)
 ```
 
-A more durable version persists `nextFireAt` alongside each schedule definition; a deeper one elects a single leader to avoid duplicate ticks across instances. That whole layer is what a future `@tanstack/workflow-cron` package would provide. The design sketch lives in [`research/SCHEDULING.md`](https://github.com/TanStack/workflow/blob/main/research/SCHEDULING.md).
+A more durable version persists `nextFireAt` alongside each schedule definition;
+a deeper one claims due ticks atomically so duplicate schedulers do not start the
+same work twice. `@tanstack/workflow-runtime` provides that newer shape through
+registered schedules, schedule buckets, leases, and bounded sweeps. See the
+[Guide](../guide/index.md) for the current production path.
 
 ## Test pattern
 

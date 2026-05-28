@@ -1,0 +1,11 @@
+{
+  "name": "tanstack-workflow-deployment-pocs",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tanstack/workflow-core": "^0.0.2"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}

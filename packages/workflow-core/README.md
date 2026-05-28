@@ -79,7 +79,10 @@ await collect(
 
 ## Status
 
-Pre-alpha. Public API stable in shape; bindings (React, Solid, Vue, Svelte), storage adapters (Postgres, SQLite, Durable Objects), and devtools are forthcoming.
+Pre-alpha. Public API stable in shape. The production runtime, Drizzle/Postgres
+store, Vercel adapter, and Netlify adapter live in sibling experimental
+packages. Bindings (React, Solid, Vue, Svelte), additional stores, and devtools
+are still planned.
 
 Extracted from [`@tanstack/ai-orchestration`](https://github.com/TanStack/ai/pull/542) (Alem Tuzlak + Tom Beckenham). AI-specific layers (agents, orchestrators) compose on top.
 
@@ -90,3 +93,6 @@ Extracted from [`@tanstack/ai-orchestration`](https://github.com/TanStack/ai/pul
 - [docs/concepts/primitives.md](../../docs/concepts/primitives.md) — one block per primitive
 - [docs/concepts/middleware.md](../../docs/concepts/middleware.md) — typed ctx extension
 - [docs/concepts/replay-and-resume.md](../../docs/concepts/replay-and-resume.md) — durability rules
+- [docs/guide/index.md](../../docs/guide/index.md) — production runtime guide
+- [docs/cookbook/index.md](../../docs/cookbook/index.md) — quick recipes
+- [docs/api/index.md](../../docs/api/index.md) — hand-written package API reference

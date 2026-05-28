@@ -4,5 +4,9 @@ preferWorkspacePackages: true
 
 packages:
   - 'packages/workflow-core'
+  - 'packages/workflow-netlify'
+  - 'packages/workflow-runtime'
+  - 'packages/workflow-store-drizzle-postgres'
+  - 'packages/workflow-vercel'
 onlyBuiltDependencies:
   - esbuild

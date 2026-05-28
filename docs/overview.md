@@ -50,6 +50,24 @@ Replay reads the durable events. Live subscribers see both.
 - **Above**: agent frameworks (`@tanstack/ai-orchestration`), domain workflows in app code.
 - **Beside**: TanStack DB (reactive state from the log), TanStack Query (client cache).
 
+## Runtime shape
+
+The production path has three layers:
+
+- `@tanstack/workflow-core`: the replay engine and workflow authoring API.
+- `@tanstack/workflow-runtime`: registered workflows, execution store contract,
+  schedules, timers, signals, approvals, leases, and bounded sweeps.
+- Store and host adapters: Postgres, Vercel, Netlify, Cloudflare, queues, and
+  other environment-specific capabilities.
+
+This keeps the engine headless without leaving deployment mechanics as an
+exercise for every user.
+
 ## Status
 
-`@tanstack/workflow-core` ships the engine and the in-memory store. Storage adapters, framework bindings, and devtools land in follow-up packages.
+`@tanstack/workflow-core` ships the engine and the in-memory `RunStore`.
+`@tanstack/workflow-runtime` is the experimental durable runtime layer.
+`@tanstack/workflow-store-drizzle-postgres`, `@tanstack/workflow-vercel`, and
+`@tanstack/workflow-netlify` are experimental capability adapters.
+
+Start with the [Guide](guide/index.md) for the full production model.

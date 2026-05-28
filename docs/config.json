@@ -14,12 +14,46 @@
           "to": "overview"
         },
         {
+          "label": "Comparison",
+          "to": "comparison"
+        },
+        {
           "label": "Installation",
           "to": "installation"
         },
         {
           "label": "Quick Start",
           "to": "quick-start"
+        }
+      ]
+    },
+    {
+      "label": "Guide",
+      "children": [
+        {
+          "label": "Tutorial and Guide",
+          "to": "guide/index"
+        },
+        {
+          "label": "Runtime Model",
+          "to": "guide/runtime-model"
+        },
+        {
+          "label": "Persistence",
+          "to": "guide/persistence"
+        },
+        {
+          "label": "Deployment",
+          "to": "guide/deployment"
+        }
+      ]
+    },
+    {
+      "label": "Cookbook",
+      "children": [
+        {
+          "label": "Recipes",
+          "to": "cookbook/index"
         }
       ]
     },
@@ -48,7 +82,27 @@
       "label": "API Reference",
       "children": [
         {
-          "label": "workflow-core",
+          "label": "API Overview",
+          "to": "api/index"
+        },
+        {
+          "label": "Core API",
+          "to": "api/core"
+        },
+        {
+          "label": "Runtime API",
+          "to": "api/runtime"
+        },
+        {
+          "label": "Store Adapters",
+          "to": "api/store-adapters"
+        },
+        {
+          "label": "Host Adapters",
+          "to": "api/host-adapters"
+        },
+        {
+          "label": "Generated Core Reference",
           "to": "reference/index"
         }
       ]

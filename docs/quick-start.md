@@ -73,10 +73,11 @@ await collect(runWorkflow({
 import { z } from 'zod'
 
 const checkout = createWorkflow({ id: 'checkout' }).handler(async (ctx) => {
+  const now = await ctx.now()
   const payment = await ctx.waitForEvent('payment-completed', {
     schema: z.object({ amount: z.number(), reference: z.string() }),
-    meta: { sessionId: ctx.runId },           // shown to UI / driver
-    deadline: Date.now() + 24 * 60 * 60_000,  // host wakes if not delivered
+    meta: { sessionId: ctx.runId }, // shown to UI / driver
+    deadline: now + 24 * 60 * 60_000, // host wakes if not delivered
   })
   return { paid: payment.amount, ref: payment.reference }
 })
@@ -188,6 +189,9 @@ Pass these to clients / consumers; the workflow remains the single source of tru
 
 ## Where next
 
+- [Guide](guide/index.md)
+- [Cookbook](cookbook/index.md)
+- [API reference](api/index.md)
 - [Primitives reference](concepts/primitives.md)
 - [Middleware](concepts/middleware.md)
 - [Replay and resume](concepts/replay-and-resume.md)

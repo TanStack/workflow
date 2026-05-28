@@ -1,0 +1,17 @@
+{
+  "name": "tanstack-workflow-cloudflare-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@tanstack/workflow-core": "^0.0.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "typescript": "6.0.3",
+    "wrangler": "latest"
+  }
+}

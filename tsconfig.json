@@ -13,6 +13,25 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "paths": {
+      "@tanstack/workflow-core": ["./packages/workflow-core/src/index.ts"],
+      "@tanstack/workflow-core/types": [
+        "./packages/workflow-core/src/types.ts"
+      ],
+      "@tanstack/workflow-netlify": [
+        "./packages/workflow-netlify/src/index.ts"
+      ],
+      "@tanstack/workflow-runtime": [
+        "./packages/workflow-runtime/src/index.ts"
+      ],
+      "@tanstack/workflow-runtime/types": [
+        "./packages/workflow-runtime/src/types.ts"
+      ],
+      "@tanstack/workflow-store-drizzle-postgres": [
+        "./packages/workflow-store-drizzle-postgres/src/index.ts"
+      ],
+      "@tanstack/workflow-vercel": ["./packages/workflow-vercel/src/index.ts"]
+    },
     "noEmit": true,
     "noImplicitReturns": true,
     "noUncheckedIndexedAccess": true,
