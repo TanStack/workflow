@@ -1,6 +1,6 @@
 {
   "name": "@tanstack/workflow-vercel",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Vercel host adapter for TanStack Workflow runtimes.",
   "author": "Tanner Linsley",
   "license": "MIT",
