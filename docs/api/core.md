@@ -1,5 +1,6 @@
 ---
-title: Core API | TanStack Workflow
+id: core-api
+title: Core API
 ---
 
 # Core API

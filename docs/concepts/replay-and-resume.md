@@ -1,4 +1,7 @@
-# Replay and resume
+---
+id: replay-and-resume
+title: Replay and Resume
+---
 
 Workflows are closures. Every invocation runs the handler from the top. Replay short-circuits past completed work by reading the event log.
 

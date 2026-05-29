@@ -1,4 +1,7 @@
-# Quick start
+---
+id: quick-start
+title: Quick Start
+---
 
 Minimal recipes for `@tanstack/workflow-core` + `zod`. Snippets use small local helpers like `collect(...)` and `findRunId(...)` when they need to drain an event stream.
 

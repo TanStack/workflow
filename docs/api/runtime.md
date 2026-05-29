@@ -1,5 +1,6 @@
 ---
-title: Runtime API | TanStack Workflow
+id: runtime-api
+title: Runtime API
 ---
 
 # Runtime API

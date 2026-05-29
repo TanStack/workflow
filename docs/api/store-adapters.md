@@ -1,5 +1,6 @@
 ---
-title: Store Adapters | TanStack Workflow
+id: store-adapters
+title: Store Adapters
 ---
 
 # Store adapters

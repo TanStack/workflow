@@ -1,4 +1,7 @@
-# Overview
+---
+id: overview
+title: Overview
+---
 
 TanStack Workflow is a durable execution engine for TypeScript. Workflows are async functions that pause, persist, and resume across process restarts.
 

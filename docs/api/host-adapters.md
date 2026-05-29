@@ -1,5 +1,6 @@
 ---
-title: Host Adapters | TanStack Workflow
+id: host-adapters
+title: Host Adapters
 ---
 
 # Host adapters

@@ -1,4 +1,7 @@
-# Scheduling and recurring runs
+---
+id: scheduling
+title: Scheduling and Recurring Runs
+---
 
 `@tanstack/workflow-core` ships no cron daemon. The shape every mature workflow
 engine converges on is **external scheduler + durable store + bounded wake-up**.

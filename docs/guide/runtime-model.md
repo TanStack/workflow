@@ -1,5 +1,6 @@
 ---
-title: Runtime Model | TanStack Workflow
+id: runtime-model
+title: Runtime Model
 ---
 
 # Runtime model

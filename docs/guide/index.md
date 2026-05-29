@@ -1,5 +1,6 @@
 ---
-title: Tutorial and Guide | TanStack Workflow
+id: guide
+title: Tutorial and Guide
 ---
 
 # Tutorial and guide

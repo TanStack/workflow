@@ -1,5 +1,6 @@
 ---
-title: Comparison | TanStack Workflow
+id: comparison
+title: Comparison
 toc: false
 ---
 

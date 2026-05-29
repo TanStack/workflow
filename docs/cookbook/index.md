@@ -1,5 +1,6 @@
 ---
-title: Cookbook | TanStack Workflow
+id: cookbook
+title: Cookbook
 ---
 
 # Cookbook

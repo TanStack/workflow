@@ -1,4 +1,7 @@
-# Middleware
+---
+id: middleware
+title: Middleware
+---
 
 Middleware extends `ctx` with typed fields. Workflows declare them as an array — extensions accumulate.
 

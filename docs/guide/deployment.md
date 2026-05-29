@@ -1,5 +1,6 @@
 ---
-title: Deployment | TanStack Workflow
+id: deployment
+title: Deployment
 ---
 
 # Deployment

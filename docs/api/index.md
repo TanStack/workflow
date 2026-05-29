@@ -1,5 +1,6 @@
 ---
-title: API Reference | TanStack Workflow
+id: api
+title: API Reference
 ---
 
 # API reference

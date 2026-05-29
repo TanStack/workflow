@@ -1,5 +1,6 @@
 ---
-title: Persistence | TanStack Workflow
+id: persistence
+title: Persistence
 ---
 
 # Persistence

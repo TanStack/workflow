@@ -1,4 +1,7 @@
-# Primitives
+---
+id: primitives
+title: Primitives
+---
 
 Every durable operation goes through `ctx.*`. Each primitive has one recipe and one footgun.
 
