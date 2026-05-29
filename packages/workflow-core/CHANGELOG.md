@@ -1,5 +1,11 @@
 # @tanstack/workflow-core
 
+## 0.0.3
+
+### Patch Changes
+
+- Add the workflow runtime, durable execution store contract, Drizzle/Postgres store, Vercel and Netlify host adapters, deployment POCs, and production docs.
+
 ## 0.0.2
 
 ### Patch Changes

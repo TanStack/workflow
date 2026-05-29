@@ -1,6 +1,6 @@
 {
   "name": "@tanstack/workflow-store-drizzle-postgres",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Drizzle/Postgres durable execution store for TanStack Workflow.",
   "author": "Tanner Linsley",
   "license": "MIT",

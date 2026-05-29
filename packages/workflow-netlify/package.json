@@ -1,6 +1,6 @@
 {
   "name": "@tanstack/workflow-netlify",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Netlify host adapter for TanStack Workflow runtimes.",
   "author": "Tanner Linsley",
   "license": "MIT",
