@@ -23,24 +23,24 @@ stakes, or an area where competitors set the bar we need to meet.
 This matrix compares product fit, not identical APIs. When public documentation
 does not clearly support a first-class claim, the cell is marked partial.
 
-| Capability | TanStack signal | TanStack Workflow | Vercel Workflow / WDK | Netlify Async Workloads | Temporal | Inngest | Trigger.dev | DBOS | Restate | Cloudflare Workflows | AWS Step Functions |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Headless library embedded in your app | Differentiator | ✅ | 🟡 | 🔴 | 🔴 | 🔴 | 🔴 | ✅ | 🟡 | 🔴 | 🔴 |
-| Bring your own durable store | Differentiator | ✅ | 🟡 | 🔴 | 🟡 | 🔴 | 🟡 | ✅ | 🔴 | 🔴 | 🔴 |
-| No required external service | Differentiator | ✅ | 🔴 | 🔴 | 🔴 | 🔴 | 🟡 | ✅ | 🔴 | 🔴 | 🔴 |
-| Runs across Vercel, Netlify, Cloudflare, Node, AWS | Differentiator | ✅ | 🟡 | 🔴 | 🟡 | ✅ | 🟡 | 🟡 | 🟡 | 🔴 | 🔴 |
-| Plain TypeScript workflow authoring | Table stakes | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 |
-| Explicit durable steps | Table stakes | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Durable sleep / timers | Table stakes | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Wait for external events | Table stakes | ✅ | ✅ | 🟡 | ✅ | ✅ | ✅ | 🟡 | ✅ | ✅ | ✅ |
-| Human approval gates | Catch up to Temporal-style workflows | ✅ | 🟡 | 🟡 | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| Recurring schedules / cron | Table stakes | ✅ | ✅ | 🟡 | ✅ | ✅ | ✅ | ✅ | 🟡 | 🟡 | ✅ |
-| Schedule pause/resume/backfill controls | Catch up to Temporal, Inngest, Trigger.dev, DBOS | 🟡 | 🟡 | 🔴 | ✅ | ✅ | 🟡 | ✅ | 🟡 | 🔴 | 🟡 |
-| Durable queues / concurrency controls | Catch up to managed task platforms | 🟡 | ✅ | 🟡 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Version routing for paused runs | Catch up to Temporal, Trigger.dev, Restate | ✅ | 🟡 | 🟡 | ✅ | 🟡 | ✅ | 🟡 | ✅ | 🟡 | ✅ |
-| Run search, replay, retry, and retention operations | Catch up to mature control planes | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ✅ | 🟡 | 🟡 | ✅ | ✅ |
-| Devtools / dashboard included | Catch up to managed platforms, TanStack-style | 🟡 | ✅ | 🟡 | ✅ | ✅ | ✅ | 🟡 | ✅ | ✅ | ✅ |
-| Managed control plane included | Intentional non-goal | 🔴 | ✅ | ✅ | 🟡 | ✅ | ✅ | 🔴 | 🟡 | ✅ | ✅ |
+| Capability | TanStack signal | TanStack Workflow | Vercel Workflow / WDK | Temporal | Inngest | Trigger.dev | Cloudflare Workflows | AWS Step Functions |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Headless library embedded in your app | Differentiator | ✅ | 🟡 | 🔴 | 🔴 | 🔴 | 🔴 | 🔴 |
+| Bring your own durable store | Differentiator | ✅ | 🟡 | 🟡 | 🔴 | 🟡 | 🔴 | 🔴 |
+| No required external service | Differentiator | ✅ | 🔴 | 🔴 | 🔴 | 🟡 | 🔴 | 🔴 |
+| Runs across Vercel, Netlify, Cloudflare, Node, AWS | Differentiator | ✅ | 🟡 | 🟡 | ✅ | 🟡 | 🔴 | 🔴 |
+| Plain TypeScript workflow authoring | Table stakes | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 |
+| Explicit durable steps | Table stakes | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Durable sleep / timers | Table stakes | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Wait for external events | Table stakes | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Human approval gates | Catch up to Temporal-style workflows | ✅ | 🟡 | ✅ | 🟡 | 🟡 | 🟡 | 🟡 |
+| Recurring schedules / cron | Table stakes | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 | ✅ |
+| Schedule pause/resume/backfill controls | Catch up to Temporal, Inngest, Trigger.dev | 🟡 | 🟡 | ✅ | ✅ | 🟡 | 🔴 | 🟡 |
+| Durable queues / concurrency controls | Catch up to managed task platforms | 🟡 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Version routing for paused runs | Catch up to Temporal and Trigger.dev | ✅ | 🟡 | ✅ | 🟡 | ✅ | 🟡 | ✅ |
+| Run search, replay, retry, and retention operations | Catch up to mature control planes | 🟡 | 🟡 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Devtools / dashboard included | Catch up to managed platforms, TanStack-style | 🟡 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Managed control plane included | Intentional non-goal | 🔴 | ✅ | 🟡 | ✅ | ✅ | ✅ | ✅ |
 
 ## Product shape
 
@@ -48,14 +48,22 @@ does not clearly support a first-class claim, the cell is marked partial.
 | --- | --- | --- | --- | --- | --- |
 | **TanStack Workflow** | Headless core plus optional capability packages for stores, timers, schedules, queues, and devtools. | `createWorkflow` + explicit `ctx.step`, `ctx.sleep`, `ctx.waitForEvent`, `ctx.approve`. | A `WorkflowStore` you own or configure. Store adapters provide event logs, run state, timer indexes, schedule records, leases, search indexes, and retention. | High. Same workflow code across Vercel, Netlify, Cloudflare, Node, AWS, and custom infrastructure. | Teams that want TanStack-style primitives, app-embedded durable execution, framework portability, and control over persistence. |
 | **Vercel Workflow / WDK** | Managed Vercel platform plus open SDK/world abstraction. | `"use workflow"` / `"use step"` directives and WDK APIs. | Vercel managed persistence for state/event logs on Vercel; swappable worlds in WDK. | Medium. WDK has worlds, but Vercel Workflow value is Vercel-managed. | Best native Vercel choice when you want Vercel to own the workflow platform. |
-| **Netlify Async Workloads** | Managed Netlify extension. | `asyncWorkloadFn`, events, `step.run`, sleeps/retries. | Netlify-managed internal functions/blobs/workload data. | Low to medium. Netlify-oriented product. | Best native Netlify choice when you want Netlify to own the workload platform. |
 | **Temporal** | Dedicated workflow server/control plane plus workers. | Deterministic workflow code + Activities, Signals, Queries, Updates. | Temporal event history in Temporal service/database. | Medium. Portable infrastructure, but you operate or adopt Temporal. | Teams that want the deepest mature workflow control plane. |
 | **Inngest** | Managed/serverless event workflow platform. | Event-triggered functions with durable `step.*` APIs. | Inngest managed history/state. | Medium. Framework integrations, but platform-bound. | Serverless event workflows with strong managed DX. |
 | **Trigger.dev** | Managed/self-hostable background task platform. | Tasks, waits, queues, schedules. | Trigger managed/self-hosted task run state. | Medium. Self-hostable, but task-platform oriented. | Background jobs, queues, schedules, replays, and operational task UX. |
-| **DBOS** | Library/runtime backed by Postgres. | Decorators / workflow functions / queues. | Postgres system database. | High if Postgres is acceptable. | Teams that want Postgres to be the system boundary. |
-| **Restate** | Service/runtime for durable service handlers. | Handlers, virtual objects, workflows, durable `ctx.run`. | Restate server journal. | Medium. Requires Restate server. | Durable service handlers and virtual-object style application architecture. |
 | **Cloudflare Workflows** | Cloudflare-managed workflow product. | Worker workflow classes, steps, sleeps, events. | Cloudflare managed workflow state. | Low to medium. Cloudflare-oriented. | Cloudflare-native durable workflows. |
 | **AWS Step Functions** | Managed state machine service. | JSON/YAML or SDK-defined state machines. | AWS managed execution history. | Low to medium. AWS-native. | Enterprise/serverless workflows inside AWS. |
+
+## Adjacent systems
+
+These products are still useful reference points, but they are narrower,
+newer, or more architectural than the main comparison set.
+
+| Product / library | Why it matters | Why it is not in the main matrix |
+| --- | --- | --- |
+| **Netlify Async Workloads** | Important deployment-native reference for Netlify and useful for side-by-side demos with TanStack Workflow on Netlify. | It is Netlify-specific and less widely evaluated as a standalone workflow platform. |
+| **DBOS** | Strong reference for Postgres-backed durable execution, schedules, and queues. | It is more of a database-backed application/runtime architecture than a broad workflow-platform comparison target. |
+| **Restate** | Strong reference for durable service handlers, virtual objects, workflow routing, and deployment versioning. | It is adjacent to workflows, but the main mental model is durable services rather than common app-embedded workflow primitives. |
 
 ## How to read this
 
@@ -68,8 +76,8 @@ engine own your deployment target, database, cron system, queue, or dashboard.
 That split is the point:
 
 - If you want a managed platform with an included control plane, Temporal,
-  Inngest, Trigger.dev, Vercel Workflow, Netlify Async Workloads, Cloudflare
-  Workflows, or AWS Step Functions may be the right fit.
+  Inngest, Trigger.dev, Vercel Workflow, Cloudflare Workflows, or AWS Step
+  Functions may be the right fit.
 - If you want a TypeScript workflow engine that can run inside your app, on your
   chosen host, against your chosen durable store, TanStack Workflow is the
   headless option.
