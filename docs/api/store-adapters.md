@@ -84,7 +84,9 @@ Creates the required tables and indexes if they do not exist.
 await store.ensureSchema()
 ```
 
-In production, you may want to run equivalent SQL through your migration system
+Use this from an explicit app-owned bootstrap/admin script, not from every
+request or sweep. Runtime and host adapters assume the schema exists. In
+production, you may want to run equivalent SQL through your migration system
 instead of calling this at application startup.
 
 ## Default tables

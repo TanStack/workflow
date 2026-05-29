@@ -85,8 +85,6 @@ import { createDrizzlePostgresWorkflowStore } from '@tanstack/workflow-store-dri
 const db = drizzle(new Pool({ connectionString: process.env.DATABASE_URL }))
 const store = createDrizzlePostgresWorkflowStore({ db })
 
-await store.ensureSchema()
-
 export const workflowRuntime = defineWorkflowRuntime({
   store,
   workflows: {
@@ -96,6 +94,28 @@ export const workflowRuntime = defineWorkflowRuntime({
   },
 })
 ```
+
+## Create workflow tables
+
+Use an app-owned bootstrap script for schema setup. Do not create tables from a
+host sweep handler.
+
+```ts
+// scripts/workflow-ensure-schema.ts
+import { workflowStore } from '../src/workflows/store.server'
+
+await workflowStore.ensureSchema()
+```
+
+```json
+{
+  "scripts": {
+    "workflow:ensure-schema": "tsx scripts/workflow-ensure-schema.ts"
+  }
+}
+```
+
+Run this against the same `DATABASE_URL` your deployed functions use.
 
 ## Start a run from HTTP
 

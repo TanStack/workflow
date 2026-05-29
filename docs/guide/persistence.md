@@ -165,6 +165,11 @@ const store = createDrizzlePostgresWorkflowStore({
 await store.ensureSchema()
 ```
 
+`ensureSchema()` is useful for local demos, tests, and explicit bootstrap
+scripts. Runtime sweeps and host adapters do not call it for you. A missing table
+during `runtime.sweep()` means the deployed database has not been migrated yet,
+not that the host adapter failed.
+
 You can override table names:
 
 ```ts

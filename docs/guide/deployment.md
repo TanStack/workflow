@@ -55,6 +55,37 @@ Set `maxDurationMs` below the host's real timeout. If the sweep returns
 `remainingMayExist: true`, another scheduled tick, queue message, or manual
 follow-up can keep draining work.
 
+## Schema setup
+
+Runtime sweeps assume the durable store schema already exists. Host adapters do
+not create tables during a cron tick, scheduled function, or worker alarm. That
+keeps production behavior explicit: migrations and bootstrap steps belong to the
+app deploy/admin process, not the background sweep path.
+
+For the Drizzle/Postgres adapter, create an app-owned script:
+
+```ts
+// scripts/workflow-ensure-schema.ts
+import { workflowStore } from '../src/workflows/store.server'
+
+await workflowStore.ensureSchema()
+```
+
+Wire it into your app scripts:
+
+```json
+{
+  "scripts": {
+    "workflow:ensure-schema": "tsx scripts/workflow-ensure-schema.ts",
+    "workflow:sweep": "tsx scripts/workflow-sweep.ts"
+  }
+}
+```
+
+Run `pnpm workflow:ensure-schema` against the same `DATABASE_URL` your deployed
+functions use. In production, you can also apply equivalent SQL through your
+normal migration system.
+
 ## Cloudflare
 
 Cloudflare can run the same runtime shape with a Worker `scheduled()` handler:
@@ -194,6 +225,8 @@ event arrays.
 
 - Scheduled Functions are wake-up ticks.
 - Published deploys own scheduled function execution.
+- Deploy Previews do not auto-tick scheduled functions. Use Netlify's manual
+  "Run now" action to test the path before publishing.
 - Use a durable external store such as Postgres, Netlify Database, Neon, or
   another store adapter.
 - Keep `maxDurationMs` below the function timeout.

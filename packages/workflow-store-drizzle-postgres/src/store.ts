@@ -650,12 +650,26 @@ export function createDrizzlePostgresWorkflowStore(
       const schedules = await queryRows<ScheduleRow>(
         db,
         sql`
-          select *
-          from ${tableSql.schedules}
-          where enabled = true
-            and next_fire_at is not null
-            and next_fire_at <= ${args.now}
-          order by next_fire_at asc, schedule_id asc
+          select schedule.*
+          from ${tableSql.schedules} schedule
+          left join ${tableSql.scheduleBuckets} bucket
+            on bucket.schedule_id = schedule.schedule_id
+            and bucket.bucket_id = schedule.next_fire_at::text
+          where schedule.enabled = true
+            and schedule.next_fire_at is not null
+            and schedule.next_fire_at <= ${args.now}
+            and (
+              bucket.schedule_id is null
+              or (
+                bucket.status <> 'started'
+                and (
+                  bucket.lease_owner is null
+                  or bucket.lease_owner = ${args.leaseOwner}
+                  or bucket.lease_expires_at <= ${args.now}
+                )
+              )
+            )
+          order by schedule.next_fire_at asc, schedule.schedule_id asc
           limit ${args.limit}
         `,
       )

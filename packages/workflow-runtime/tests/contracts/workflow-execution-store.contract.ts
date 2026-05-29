@@ -376,6 +376,63 @@ export function runWorkflowExecutionStoreContractTests(
       expect(later).toEqual([])
     })
 
+    it('does not let an already-started older bucket starve later due schedules', async () => {
+      const store = await options.createStore()
+      await store.upsertSchedule({
+        scheduleId: 'intent-discover-every-6h',
+        workflowId: 'intent-discover-workflow',
+        schedule: { kind: 'interval', everyMs: 6 * 60 * 60 * 1000 },
+        overlapPolicy: 'skip',
+        input: {},
+        nextFireAt: 1_780_077_600_000,
+        enabled: true,
+        now: 0,
+      })
+      await store.upsertSchedule({
+        scheduleId: 'intent-process-every-15m',
+        workflowId: 'intent-process-workflow',
+        schedule: { kind: 'interval', everyMs: 15 * 60 * 1000 },
+        overlapPolicy: 'skip',
+        input: {},
+        nextFireAt: 1_780_092_000_000,
+        enabled: true,
+        now: 0,
+      })
+
+      const first = await store.claimDueScheduleBuckets({
+        now: 1_780_092_000_000,
+        limit: 1,
+        leaseOwner: 'worker-a',
+        leaseMs: 30_000,
+      })
+      await store.markScheduleBucketStarted({
+        scheduleId: 'intent-discover-every-6h',
+        bucketId: '1780077600000',
+        runId: first[0]!.runId,
+        now: 1_780_092_000_000,
+      })
+
+      const second = await store.claimDueScheduleBuckets({
+        now: 1_780_092_000_000,
+        limit: 1,
+        leaseOwner: 'worker-b',
+        leaseMs: 30_000,
+      })
+
+      expect(first).toHaveLength(1)
+      expect(first[0]).toMatchObject({
+        scheduleId: 'intent-discover-every-6h',
+        bucketId: '1780077600000',
+        workflowId: 'intent-discover-workflow',
+      })
+      expect(second).toHaveLength(1)
+      expect(second[0]).toMatchObject({
+        scheduleId: 'intent-process-every-15m',
+        bucketId: '1780092000000',
+        workflowId: 'intent-process-workflow',
+      })
+    })
+
     it('lists runs by workflow and status', async () => {
       const store = await options.createStore()
       await store.saveRunState({
