@@ -1,6 +1,6 @@
 {
   "name": "@tanstack/workflow-railway",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Railway host adapter for TanStack Workflow runtimes.",
   "author": "Tanner Linsley",
   "license": "MIT",
