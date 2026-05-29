@@ -22,16 +22,16 @@ pnpm add @tanstack/workflow-core @tanstack/workflow-runtime \
   @tanstack/workflow-store-drizzle-postgres drizzle-orm pg zod
 ```
 
-Vercel:
-
-```bash
-pnpm add @tanstack/workflow-vercel
-```
-
 Netlify:
 
 ```bash
 pnpm add @tanstack/workflow-netlify
+```
+
+Vercel:
+
+```bash
+pnpm add @tanstack/workflow-vercel
 ```
 
 ## Create a workflow
@@ -262,6 +262,68 @@ console.log(result.scheduled[0]?.events)
 
 Do this in development or admin tooling, not on every production cron response.
 
+## Cloudflare scheduled worker
+
+```ts
+import { createCloudflareWorkflowScheduledHandler } from '@tanstack/workflow-cloudflare'
+
+export default {
+  scheduled: createCloudflareWorkflowScheduledHandler({
+    runtime: ({ env }) => createWorkflowRuntime(env),
+    maxScheduledRuns: 25,
+    maxTimers: 25,
+    maxDurationMs: 25_000,
+  }),
+}
+```
+
+## Railway cron command
+
+```ts
+// scripts/workflow-sweep.ts
+import { createRailwayWorkflowCronCommand } from '@tanstack/workflow-railway'
+import { workflowRuntime } from '../src/workflows/runtime.server'
+
+const sweep = createRailwayWorkflowCronCommand({
+  runtime: workflowRuntime,
+  maxScheduledRuns: 25,
+  maxTimers: 25,
+  maxDurationMs: 55_000,
+  logSummary: true,
+})
+
+await sweep()
+```
+
+Configure Railway Cron Jobs with config-as-code:
+
+```toml
+# railway.toml
+[deploy]
+startCommand = "pnpm workflow:sweep"
+cronSchedule = "*/5 * * * *"
+restartPolicyType = "NEVER"
+```
+
+## Netlify scheduled function
+
+```ts
+// netlify/functions/workflow-sweep-background.ts
+import {
+  createNetlifyWorkflowSweepHandler,
+} from '@tanstack/workflow-netlify'
+import { workflowRuntime } from '../../src/workflows/runtime.server'
+
+export default createNetlifyWorkflowSweepHandler({
+  runtime: workflowRuntime,
+  maxDurationMs: 25_000,
+})
+
+export const config = {
+  schedule: '*/5 * * * *',
+}
+```
+
 ## Vercel sweep route
 
 ```ts
@@ -284,26 +346,6 @@ export const GET = createVercelWorkflowSweepHandler({
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [{ "path": "/api/workflow/sweep", "schedule": "*/5 * * * *" }]
 }
-```
-
-## Netlify scheduled function
-
-```ts
-// netlify/functions/workflow-sweep-background.ts
-import {
-  createNetlifyWorkflowSweepConfig,
-  createNetlifyWorkflowSweepHandler,
-} from '@tanstack/workflow-netlify'
-import { workflowRuntime } from '../../src/workflows/runtime.server'
-
-export default createNetlifyWorkflowSweepHandler({
-  runtime: workflowRuntime,
-  maxDurationMs: 25_000,
-})
-
-export const config = createNetlifyWorkflowSweepConfig({
-  schedule: '*/5 * * * *',
-})
 ```
 
 ## Lazy load workflow code

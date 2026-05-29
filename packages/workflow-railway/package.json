@@ -1,13 +1,13 @@
 {
-  "name": "@tanstack/workflow-vercel",
-  "version": "0.0.1",
-  "description": "Vercel host adapter for TanStack Workflow runtimes.",
+  "name": "@tanstack/workflow-railway",
+  "version": "0.0.0",
+  "description": "Railway host adapter for TanStack Workflow runtimes.",
   "author": "Tanner Linsley",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TanStack/workflow.git",
-    "directory": "packages/workflow-vercel"
+    "directory": "packages/workflow-railway"
   },
   "homepage": "https://tanstack.com/workflow",
   "funding": {
@@ -18,8 +18,8 @@
     "tanstack",
     "workflow",
     "durable-execution",
-    "vercel",
-    "serverless"
+    "railway",
+    "cron"
   ],
   "scripts": {
     "clean": "premove ./build ./dist",

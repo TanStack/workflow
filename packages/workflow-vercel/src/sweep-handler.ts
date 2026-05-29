@@ -7,30 +7,11 @@ import type {
   WorkflowRuntimeSweepResult,
 } from '@tanstack/workflow-runtime'
 
-const DEFAULT_SWEEP_INTERVAL_MINUTES = 5
-const DEFAULT_SWEEP_PATH = '/api/workflow/sweep'
-
 export { materializeWorkflowSchedules }
 export type {
   MaterializedWorkflowSchedule,
   MaterializeWorkflowSchedulesOptions,
 } from '@tanstack/workflow-runtime'
-
-export interface VercelWorkflowCron {
-  path: string
-  schedule: string
-}
-
-export interface VercelWorkflowCronConfig {
-  $schema: 'https://openapi.vercel.sh/vercel.json'
-  crons: ReadonlyArray<VercelWorkflowCron>
-}
-
-export interface VercelWorkflowCronConfigOptions {
-  path?: string
-  schedule?: string
-  everyMinutes?: number
-}
 
 export interface VercelWorkflowSweepResponse {
   ok: true
@@ -74,41 +55,6 @@ export interface VercelWorkflowSweepHandlerOptions<
   materializeSchedules?: boolean
   cronLookbackMs?: number
   cronSecret?: string
-}
-
-export const vercelWorkflowCronConfig = createVercelWorkflowCronConfig()
-
-export function createVercelWorkflowCronConfig(
-  options: VercelWorkflowCronConfigOptions = {},
-): VercelWorkflowCronConfig {
-  const path = options.path ?? DEFAULT_SWEEP_PATH
-  if (!path.startsWith('/')) {
-    throw new Error('Vercel workflow cron path must start with "/".')
-  }
-  if (options.schedule) {
-    return {
-      $schema: 'https://openapi.vercel.sh/vercel.json',
-      crons: [{ path, schedule: options.schedule }],
-    }
-  }
-
-  const everyMinutes = options.everyMinutes ?? DEFAULT_SWEEP_INTERVAL_MINUTES
-  if (!Number.isInteger(everyMinutes) || everyMinutes <= 0) {
-    throw new Error(
-      'Vercel workflow sweep interval must be a positive integer.',
-    )
-  }
-
-  return {
-    $schema: 'https://openapi.vercel.sh/vercel.json',
-    crons: [
-      {
-        path,
-        schedule:
-          everyMinutes === 1 ? '* * * * *' : `*/${everyMinutes} * * * *`,
-      },
-    ],
-  }
 }
 
 export function createVercelWorkflowSweepHandler<

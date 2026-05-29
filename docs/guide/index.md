@@ -10,14 +10,19 @@ write workflows as ordinary async functions, mark durable work with explicit
 primitives, and choose where persistence, timers, schedules, and deployment
 live.
 
+The production model is deliberately app-centered. The workflow engine does not
+become a separate platform where your business logic lives. Your app starts and
+resumes runs, your store records durability, and your host wakes bounded work
+when timers or schedules are due.
+
 This guide walks through the production shape:
 
 1. Define a workflow with `@tanstack/workflow-core`.
 2. Put it behind a runtime with `@tanstack/workflow-runtime`.
 3. Persist executions in a durable store.
 4. Wake due timers and schedules with a host cron, scheduled function, or worker.
-5. Deploy the same workflow code on Vercel, Netlify, Cloudflare, Node, or your
-   own infrastructure.
+5. Deploy the same workflow code on Cloudflare, Railway, Netlify, Node, Vercel,
+   or your own infrastructure.
 
 ## Package map
 
@@ -26,8 +31,10 @@ This guide walks through the production shape:
 | `@tanstack/workflow-core` | The replay engine, workflow builder, primitives, middleware, version routing, and low-level `RunStore`. |
 | `@tanstack/workflow-runtime` | The deployment-independent runtime, execution store contract, schedules, timers, leases, and sweep driver. |
 | `@tanstack/workflow-store-drizzle-postgres` | A Postgres implementation of the runtime execution store contract using Drizzle as the SQL surface. |
-| `@tanstack/workflow-vercel` | A Vercel route handler and cron config helper that call `runtime.sweep()`. |
+| `@tanstack/workflow-cloudflare` | A Cloudflare Worker `scheduled()` handler and Wrangler cron config helper that call `runtime.sweep()`. |
+| `@tanstack/workflow-railway` | A Railway Cron Job command helper that calls `runtime.sweep()` and exits. |
 | `@tanstack/workflow-netlify` | A Netlify Scheduled Function handler and config helper that call `runtime.sweep()`. |
+| `@tanstack/workflow-vercel` | A Vercel route handler and cron config helper that call `runtime.sweep()`. |
 
 The important boundary is this:
 
@@ -35,6 +42,10 @@ The important boundary is this:
 
 The engine is not Drizzle-backed, Vercel-backed, Netlify-backed, or cron-backed.
 Those are capability adapters around a common runtime/store contract.
+
+That is the main reason to reach for TanStack Workflow: you get durable
+execution, but keep control over the runtime and persistence choices that make
+sense for your app.
 
 ## Install
 
@@ -54,9 +65,13 @@ pnpm add @tanstack/workflow-core @tanstack/workflow-runtime \
 Add one host adapter when you deploy:
 
 ```bash
-pnpm add @tanstack/workflow-vercel
+pnpm add @tanstack/workflow-cloudflare
+# or
+pnpm add @tanstack/workflow-railway
 # or
 pnpm add @tanstack/workflow-netlify
+# or
+pnpm add @tanstack/workflow-vercel
 ```
 
 ## Define a workflow
@@ -252,6 +267,80 @@ By default, host adapters set `includeEvents: false` so a busy sweep does not
 retain every emitted event in memory. Use `includeSweepResult` or `includeEvents`
 only when debugging.
 
+## Deploy on Cloudflare
+
+Cloudflare Workers can wake the runtime from `scheduled()`:
+
+```ts
+import { createCloudflareWorkflowScheduledHandler } from '@tanstack/workflow-cloudflare'
+
+export default {
+  scheduled: createCloudflareWorkflowScheduledHandler({
+    runtime: ({ env }) => createWorkflowRuntime(env),
+    maxScheduledRuns: 25,
+    maxTimers: 25,
+    maxDurationMs: 25_000,
+  }),
+}
+```
+
+The Cron Trigger only wakes the runtime. The store decides what is actually due.
+
+## Deploy on Railway
+
+Railway Cron Jobs can run a small sweep command that exits after bounded work:
+
+```ts
+import { createRailwayWorkflowCronCommand } from '@tanstack/workflow-railway'
+import { workflowRuntime } from './workflows/runtime.server'
+
+const sweep = createRailwayWorkflowCronCommand({
+  runtime: workflowRuntime,
+  maxScheduledRuns: 25,
+  maxTimers: 25,
+  maxDurationMs: 55_000,
+  logSummary: true,
+})
+
+await sweep()
+```
+
+Configure the Railway service with config-as-code:
+
+```toml
+# railway.toml
+[deploy]
+startCommand = "pnpm workflow:sweep"
+cronSchedule = "*/5 * * * *"
+restartPolicyType = "NEVER"
+```
+
+Railway runs the start command on the cron schedule. The command should exit
+after the sweep finishes. Keep persistence in a durable store such as Postgres.
+
+## Deploy on Netlify
+
+Create a Scheduled Function:
+
+```ts
+// netlify/functions/workflow-sweep-background.ts
+import {
+  createNetlifyWorkflowSweepHandler,
+} from '@tanstack/workflow-netlify'
+import { workflowRuntime } from '../../src/workflows/runtime.server'
+
+export default createNetlifyWorkflowSweepHandler({
+  runtime: workflowRuntime,
+  maxDurationMs: 25_000,
+})
+
+export const config = {
+  schedule: '*/5 * * * *',
+}
+```
+
+The Scheduled Function only wakes the runtime. It does not store workflow state.
+
 ## Deploy on Vercel
 
 Create a route handler:
@@ -286,30 +375,6 @@ Configure Vercel Cron:
 ```
 
 The Vercel Cron Job wakes the route. The database decides what is actually due.
-
-## Deploy on Netlify
-
-Create a Scheduled Function:
-
-```ts
-// netlify/functions/workflow-sweep-background.ts
-import {
-  createNetlifyWorkflowSweepConfig,
-  createNetlifyWorkflowSweepHandler,
-} from '@tanstack/workflow-netlify'
-import { workflowRuntime } from '../../src/workflows/runtime.server'
-
-export default createNetlifyWorkflowSweepHandler({
-  runtime: workflowRuntime,
-  maxDurationMs: 25_000,
-})
-
-export const config = createNetlifyWorkflowSweepConfig({
-  schedule: '*/5 * * * *',
-})
-```
-
-The Scheduled Function only wakes the runtime. It does not store workflow state.
 
 ## Why this works on serverless hosts
 

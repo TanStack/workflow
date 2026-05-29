@@ -52,5 +52,8 @@
   ],
   "dependencies": {
     "@tanstack/workflow-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@tanstack/workflow-core": "workspace:*"
   }
 }

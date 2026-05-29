@@ -91,6 +91,15 @@ and pending waits.
 Host adapters are thin. They do not define workflow semantics. They adapt a
 deployment provider's entrypoint to `runtime.sweep()`.
 
+Netlify:
+
+```ts
+export default createNetlifyWorkflowSweepHandler({
+  runtime: workflowRuntime,
+  maxDurationMs: 25_000,
+})
+```
+
 Vercel:
 
 ```ts
@@ -98,15 +107,6 @@ export const GET = createVercelWorkflowSweepHandler({
   runtime: workflowRuntime,
   cronSecret: process.env.CRON_SECRET,
   maxDurationMs: 55_000,
-})
-```
-
-Netlify:
-
-```ts
-export default createNetlifyWorkflowSweepHandler({
-  runtime: workflowRuntime,
-  maxDurationMs: 25_000,
 })
 ```
 

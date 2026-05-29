@@ -65,16 +65,28 @@ The runtime adds:
 
 ## Host adapters
 
-For Vercel:
-
-```bash
-pnpm add @tanstack/workflow-vercel
-```
-
 For Netlify:
 
 ```bash
 pnpm add @tanstack/workflow-netlify
+```
+
+For Cloudflare:
+
+```bash
+pnpm add @tanstack/workflow-cloudflare
+```
+
+For Railway:
+
+```bash
+pnpm add @tanstack/workflow-railway
+```
+
+For Vercel:
+
+```bash
+pnpm add @tanstack/workflow-vercel
 ```
 
 See the [Deployment guide](guide/deployment.md) for full setup.

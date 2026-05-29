@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createWorkflow } from '@tanstack/workflow-core'
 import {
   defineWorkflowRuntime,
@@ -6,12 +6,12 @@ import {
   inMemoryWorkflowExecutionStore,
 } from '@tanstack/workflow-runtime'
 import {
-  createVercelWorkflowSweepHandler,
+  createRailwayWorkflowCronCommand,
   materializeWorkflowSchedules,
 } from '../src'
 import type { WorkflowScheduleSpec } from '@tanstack/workflow-runtime'
 
-describe('Vercel workflow sweep adapter', () => {
+describe('Railway workflow cron command adapter', () => {
   it('materializes interval schedules and lets the runtime sweep due work', async () => {
     const runtime = createRuntime()
 
@@ -37,87 +37,53 @@ describe('Vercel workflow sweep adapter', () => {
     })
   })
 
-  it('returns a Vercel-compatible route handler response', async () => {
+  it('returns a Railway cron command summary', async () => {
     const runtime = createRuntime()
-    const handler = createVercelWorkflowSweepHandler({
+    const command = createRailwayWorkflowCronCommand({
       runtime,
       now: () => 900_000,
-      leaseOwner: 'vercel:test',
+      leaseOwner: 'railway:test',
     })
 
-    const response = await handler(
-      new Request('https://example.com/api/workflow/sweep', {
-        headers: {
-          'user-agent': 'vercel-cron/1.0',
-        },
-      }),
-    )
-    const body = (await response.json()) as {
-      ok: true
-      leaseOwner: string
-      materialized: ReadonlyArray<unknown>
-      summary: {
-        materialized: number
-        scheduled: { completed?: number }
-        returnedEventCount: number
-      }
-      sweep?: unknown
-    }
+    const result = await command()
 
-    expect(response.status).toBe(200)
-    expect(body.ok).toBe(true)
-    expect(body.leaseOwner).toBe('vercel:test')
-    expect(body.materialized).toHaveLength(1)
-    expect(body.summary.materialized).toBe(1)
-    expect(body.summary.scheduled.completed).toBe(1)
-    expect(body.summary.returnedEventCount).toBe(0)
-    expect(body.sweep).toBeUndefined()
+    expect(result.ok).toBe(true)
+    expect(result.now).toBe(900_000)
+    expect(result.leaseOwner).toBe('railway:test')
+    expect(result.materialized).toHaveLength(1)
+    expect(result.summary.materialized).toBe(1)
+    expect(result.summary.scheduled.completed).toBe(1)
+    expect(result.summary.returnedEventCount).toBe(0)
+    expect(result.sweep).toBeUndefined()
   })
 
   it('can include the full runtime sweep result for debugging', async () => {
     const runtime = createRuntime()
-    const handler = createVercelWorkflowSweepHandler({
+    const command = createRailwayWorkflowCronCommand({
       runtime,
       now: () => 900_000,
-      leaseOwner: 'vercel:test',
       includeEvents: true,
       includeSweepResult: true,
     })
 
-    const response = await handler(
-      new Request('https://example.com/api/workflow/sweep'),
-    )
-    const body = (await response.json()) as {
-      sweep?: {
-        scheduled: ReadonlyArray<{ kind: string; events: Array<unknown> }>
-      }
-    }
+    const result = await command()
 
-    expect(body.sweep?.scheduled[0]?.kind).toBe('completed')
-    expect(body.sweep?.scheduled[0]?.events.length).toBeGreaterThan(0)
+    expect(result.sweep?.scheduled[0]?.kind).toBe('completed')
+    expect(result.sweep?.scheduled[0]?.events.length).toBeGreaterThan(0)
   })
 
-  it('supports Vercel CRON_SECRET authorization', async () => {
+  it('can log the compact summary', async () => {
     const runtime = createRuntime()
-    const handler = createVercelWorkflowSweepHandler({
+    const logSummary = vi.fn()
+    const command = createRailwayWorkflowCronCommand({
       runtime,
       now: () => 900_000,
-      cronSecret: 'secret',
+      logSummary,
     })
 
-    const unauthorized = await handler(
-      new Request('https://example.com/api/workflow/sweep'),
-    )
-    const authorized = await handler(
-      new Request('https://example.com/api/workflow/sweep', {
-        headers: {
-          authorization: 'Bearer secret',
-        },
-      }),
-    )
+    const result = await command()
 
-    expect(unauthorized.status).toBe(401)
-    expect(authorized.status).toBe(200)
+    expect(logSummary).toHaveBeenCalledWith(result)
   })
 })
 

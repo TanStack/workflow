@@ -3,7 +3,7 @@ import { LogConflictError, createWorkflow } from '@tanstack/workflow-core'
 import { createRunStoreAdapter, defineWorkflowRuntime } from '../../src'
 import type { WorkflowExecutionStore } from '../../src'
 
-export interface WorkflowExecutionStoreContractOptions {
+interface WorkflowExecutionStoreContractOptions {
   name: string
   createStore: () => WorkflowExecutionStore | Promise<WorkflowExecutionStore>
 }

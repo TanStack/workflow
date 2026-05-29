@@ -18,8 +18,14 @@
       "@tanstack/workflow-core/types": [
         "./packages/workflow-core/src/types.ts"
       ],
+      "@tanstack/workflow-cloudflare": [
+        "./packages/workflow-cloudflare/src/index.ts"
+      ],
       "@tanstack/workflow-netlify": [
         "./packages/workflow-netlify/src/index.ts"
+      ],
+      "@tanstack/workflow-railway": [
+        "./packages/workflow-railway/src/index.ts"
       ],
       "@tanstack/workflow-runtime": [
         "./packages/workflow-runtime/src/index.ts"

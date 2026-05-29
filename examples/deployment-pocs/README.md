@@ -12,7 +12,7 @@ The demos intentionally avoid `vercelAdapter`, `netlifyAdapter`, or
 `shared/src`:
 
 - `workflows.ts`: one long-lived fulfillment workflow and one cron-style digest workflow.
-- `http-run-store.ts`: HTTP `RunStore` client used by Vercel and Netlify.
+- `http-run-store.ts`: HTTP `RunStore` client used by Netlify and Vercel.
 - `upstash-run-store.ts`: Redis-over-HTTP `RunStore` POC with atomic append and a timer index.
 - `runtime.ts`: start, attach, signal, due-timer sweep, and scheduled-digest helpers.
 
@@ -21,10 +21,10 @@ The demos intentionally avoid `vercelAdapter`, `netlifyAdapter`, or
 These temporary POCs were deployed on May 25, 2026:
 
 - Cloudflare: <https://tanstack-workflow-cloudflare-poc.tannerlinsley.workers.dev>
-- Vercel: <https://deployment-pocs.vercel.app>
 - Netlify: <https://tanstack-workflow-netlify-poc.netlify.app>
+- Vercel: <https://deployment-pocs.vercel.app>
 
-The live Vercel and Netlify deployments use the Cloudflare Worker's Durable
+The live Netlify and Vercel deployments use the Cloudflare Worker's Durable
 Object-backed `/store` endpoint as their shared `RunStore`.
 
 ## Required storage
@@ -47,7 +47,7 @@ WORKFLOW_KEY_PREFIX=workflow-poc
 ```
 
 For the live POC, the Cloudflare store endpoint was intentionally made public
-so Vercel and Netlify could use it without sharing a credential across
+so Netlify and Vercel could use it without sharing a credential across
 providers. This is not the production recommendation; it is only a temporary
 deployment shortcut for validating the host experience.
 
@@ -99,9 +99,9 @@ curl "$BASE_URL/cron/digest"
 
 ## Destinations
 
-- [Vercel](./vercel/README.md): Next route handlers plus Vercel Cron.
-- [Netlify](./netlify/README.md): Netlify Functions plus Scheduled Functions.
 - [Cloudflare](./cloudflare/README.md): Worker fetch handler plus Cron Triggers.
+- [Netlify](./netlify/README.md): Netlify Functions plus Scheduled Functions.
+- [Vercel](./vercel/README.md): Next route handlers plus Vercel Cron.
 
 ## What this proves
 

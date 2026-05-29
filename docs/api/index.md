@@ -18,7 +18,7 @@ The generated reference for `@tanstack/workflow-core` still lives in
 | `@tanstack/workflow-core` | [Core API](core.md) |
 | `@tanstack/workflow-runtime` | [Runtime API](runtime.md) |
 | `@tanstack/workflow-store-drizzle-postgres` | [Store adapters](store-adapters.md) |
-| `@tanstack/workflow-vercel` and `@tanstack/workflow-netlify` | [Host adapters](host-adapters.md) |
+| `@tanstack/workflow-cloudflare`, `@tanstack/workflow-railway`, `@tanstack/workflow-netlify`, and `@tanstack/workflow-vercel` | [Host adapters](host-adapters.md) |
 
 ## Which API should I start with?
 

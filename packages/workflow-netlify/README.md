@@ -12,19 +12,16 @@ timers.
 
 ```ts
 // netlify/functions/workflow-sweep-background.ts
-import {
-  createNetlifyWorkflowSweepConfig,
-  createNetlifyWorkflowSweepHandler,
-} from '@tanstack/workflow-netlify'
+import { createNetlifyWorkflowSweepHandler } from '@tanstack/workflow-netlify'
 import { workflowRuntime } from '../../src/workflows/runtime.server'
 
 export default createNetlifyWorkflowSweepHandler({
   runtime: workflowRuntime,
 })
 
-export const config = createNetlifyWorkflowSweepConfig({
+export const config = {
   schedule: '*/5 * * * *',
-})
+}
 ```
 
 Workflow schedules stay in the runtime registration:

@@ -3,8 +3,10 @@ linkWorkspacePackages: true
 preferWorkspacePackages: true
 
 packages:
+  - 'packages/workflow-cloudflare'
   - 'packages/workflow-core'
   - 'packages/workflow-netlify'
+  - 'packages/workflow-railway'
   - 'packages/workflow-runtime'
   - 'packages/workflow-store-drizzle-postgres'
   - 'packages/workflow-vercel'

@@ -76,8 +76,10 @@
     "vitest": "^4.1.5"
   },
   "overrides": {
+    "@tanstack/workflow-cloudflare": "workspace:*",
     "@tanstack/workflow-core": "workspace:*",
     "@tanstack/workflow-netlify": "workspace:*",
+    "@tanstack/workflow-railway": "workspace:*",
     "@tanstack/workflow-runtime": "workspace:*",
     "@tanstack/workflow-store-drizzle-postgres": "workspace:*",
     "@tanstack/workflow-vercel": "workspace:*"

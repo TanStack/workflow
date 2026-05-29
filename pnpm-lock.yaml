@@ -78,6 +78,16 @@ importers:
         specifier: ^4.1.5
         version: 4.1.5(@types/node@25.6.0)(happy-dom@20.9.0)(vite@8.0.10(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(yaml@2.8.2))
 
+  packages/workflow-cloudflare:
+    dependencies:
+      '@tanstack/workflow-runtime':
+        specifier: workspace:*
+        version: link:../workflow-runtime
+    devDependencies:
+      '@tanstack/workflow-core':
+        specifier: workspace:*
+        version: link:../workflow-core
+
   packages/workflow-core:
     dependencies:
       '@standard-schema/spec':
@@ -93,6 +103,20 @@ importers:
       '@tanstack/workflow-runtime':
         specifier: workspace:*
         version: link:../workflow-runtime
+    devDependencies:
+      '@tanstack/workflow-core':
+        specifier: workspace:*
+        version: link:../workflow-core
+
+  packages/workflow-railway:
+    dependencies:
+      '@tanstack/workflow-runtime':
+        specifier: workspace:*
+        version: link:../workflow-runtime
+    devDependencies:
+      '@tanstack/workflow-core':
+        specifier: workspace:*
+        version: link:../workflow-core
 
   packages/workflow-runtime:
     dependencies:
@@ -121,6 +145,10 @@ importers:
       '@tanstack/workflow-runtime':
         specifier: workspace:*
         version: link:../workflow-runtime
+    devDependencies:
+      '@tanstack/workflow-core':
+        specifier: workspace:*
+        version: link:../workflow-core
 
 packages:
 

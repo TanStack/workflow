@@ -13,34 +13,31 @@ export type {
   MaterializeWorkflowSchedulesOptions,
 } from '@tanstack/workflow-runtime'
 
-export interface NetlifyWorkflowSweepResponse {
+export interface RailwayWorkflowCronResult {
   ok: true
   now: number
   leaseOwner: string
   materialized: ReadonlyArray<MaterializedWorkflowSchedule>
-  summary: NetlifyWorkflowSweepSummary
+  summary: RailwayWorkflowCronSummary
   deadlineReached: boolean
   remainingMayExist: boolean
   sweep?: WorkflowRuntimeSweepResult
 }
 
-export type NetlifyWorkflowSweepSummary =
+export type RailwayWorkflowCronSummary =
   WorkflowRuntimeSweepResult['summary'] & {
     materialized: number
   }
 
-export type NetlifyWorkflowSweepHandler = (
-  request: Request,
-) => Promise<Response>
+export type RailwayWorkflowCronCommand =
+  () => Promise<RailwayWorkflowCronResult>
 
-export interface NetlifyWorkflowSweepHandlerOptions<
+export interface RailwayWorkflowCronCommandOptions<
   TWorkflows extends WorkflowRegistrationMap = WorkflowRegistrationMap,
 > {
   runtime: WorkflowRuntimeDefinition<TWorkflows>
   now?: () => number
-  leaseOwner?:
-    | string
-    | ((args: { request: Request; now: number }) => string | undefined)
+  leaseOwner?: string | ((args: { now: number }) => string | undefined)
   limit?: number
   maxScheduledRuns?: number
   maxTimers?: number
@@ -51,14 +48,15 @@ export interface NetlifyWorkflowSweepHandlerOptions<
   includeSweepResult?: boolean
   materializeSchedules?: boolean
   cronLookbackMs?: number
+  logSummary?: boolean | ((result: RailwayWorkflowCronResult) => void)
 }
 
-export function createNetlifyWorkflowSweepHandler<
+export function createRailwayWorkflowCronCommand<
   TWorkflows extends WorkflowRegistrationMap,
 >(
-  options: NetlifyWorkflowSweepHandlerOptions<TWorkflows>,
-): NetlifyWorkflowSweepHandler {
-  return async (request) => {
+  options: RailwayWorkflowCronCommandOptions<TWorkflows>,
+): RailwayWorkflowCronCommand {
+  return async () => {
     const now = options.now?.() ?? Date.now()
     const materialized =
       options.materializeSchedules === false
@@ -67,7 +65,7 @@ export function createNetlifyWorkflowSweepHandler<
             now,
             cronLookbackMs: options.cronLookbackMs,
           })
-    const leaseOwner = resolveLeaseOwner(options.leaseOwner, request, now)
+    const leaseOwner = resolveLeaseOwner(options.leaseOwner, now)
     const sweepArgs: WorkflowRuntimeSweepArgs = {
       now,
       leaseOwner,
@@ -80,7 +78,7 @@ export function createNetlifyWorkflowSweepHandler<
       maxEvents: options.maxEvents,
     }
     const sweep = await options.runtime.sweep(sweepArgs)
-    const response: NetlifyWorkflowSweepResponse = {
+    const result: RailwayWorkflowCronResult = {
       ok: true,
       now,
       leaseOwner,
@@ -94,22 +92,27 @@ export function createNetlifyWorkflowSweepHandler<
       ...(options.includeSweepResult ? { sweep } : undefined),
     }
 
-    return Response.json(response)
+    if (typeof options.logSummary === 'function') {
+      options.logSummary(result)
+    } else if (options.logSummary) {
+      console.log(JSON.stringify(result.summary))
+    }
+
+    return result
   }
 }
 
 function resolveLeaseOwner(
-  leaseOwner: NetlifyWorkflowSweepHandlerOptions['leaseOwner'],
-  request: Request,
+  leaseOwner: RailwayWorkflowCronCommandOptions['leaseOwner'],
   now: number,
 ) {
   if (typeof leaseOwner === 'string') return leaseOwner
   if (typeof leaseOwner === 'function') {
-    return leaseOwner({ request, now }) ?? defaultLeaseOwner(request, now)
+    return leaseOwner({ now }) ?? defaultLeaseOwner(now)
   }
-  return defaultLeaseOwner(request, now)
+  return defaultLeaseOwner(now)
 }
 
-function defaultLeaseOwner(request: Request, now: number) {
-  return `netlify:${request.headers.get('x-nf-request-id') ?? now}`
+function defaultLeaseOwner(now: number) {
+  return `railway:${process.env.RAILWAY_SERVICE_ID ?? process.env.RAILWAY_DEPLOYMENT_ID ?? now}`
 }

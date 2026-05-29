@@ -6,10 +6,8 @@ import {
   inMemoryWorkflowExecutionStore,
 } from '@tanstack/workflow-runtime'
 import {
-  createNetlifyWorkflowSweepConfig,
   createNetlifyWorkflowSweepHandler,
   materializeWorkflowSchedules,
-  netlifyWorkflowSweepConfig,
 } from '../src'
 import type { WorkflowScheduleSpec } from '@tanstack/workflow-runtime'
 
@@ -136,13 +134,6 @@ describe('Netlify workflow sweep adapter', () => {
 
     expect(body.sweep?.scheduled[0]?.kind).toBe('completed')
     expect(body.sweep?.scheduled[0]?.events.length).toBeGreaterThan(0)
-  })
-
-  it('creates a default Netlify sweep config', () => {
-    expect(netlifyWorkflowSweepConfig).toEqual({ schedule: '*/5 * * * *' })
-    expect(createNetlifyWorkflowSweepConfig({ everyMinutes: 1 })).toEqual({
-      schedule: '* * * * *',
-    })
   })
 })
 

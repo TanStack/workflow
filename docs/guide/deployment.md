@@ -8,6 +8,16 @@ title: Deployment
 TanStack Workflow is designed for normal deployment targets. A workflow can span
 hours or months, but each host invocation should do bounded work and then return.
 
+The host is not the durability boundary. Cloudflare Cron Triggers, Railway Cron
+Jobs, Netlify Scheduled Functions, Vercel Cron, queues, and worker alarms only
+wake the runtime. The store decides what is due, who can claim it, and whether
+the run has already advanced.
+
+TanStack Workflow documentation and adapter work prioritizes partner
+environments first: Cloudflare, Railway, and Netlify. Vercel is still supported
+as an important compatibility target, but it should not be treated as the default
+deployment path.
+
 The deployment recipe is the same everywhere:
 
 1. Put workflow state in a durable store.
@@ -44,6 +54,149 @@ await runtime.sweep({
 Set `maxDurationMs` below the host's real timeout. If the sweep returns
 `remainingMayExist: true`, another scheduled tick, queue message, or manual
 follow-up can keep draining work.
+
+## Cloudflare
+
+Cloudflare can run the same runtime shape with a Worker `scheduled()` handler:
+
+```ts
+import { createCloudflareWorkflowScheduledHandler } from '@tanstack/workflow-cloudflare'
+
+export default {
+  scheduled: createCloudflareWorkflowScheduledHandler({
+    runtime: ({ env }) => createWorkflowRuntime(env),
+    maxScheduledRuns: 25,
+    maxTimers: 25,
+    maxDurationMs: 25_000,
+  }),
+}
+```
+
+Cloudflare-specific store adapters are separate work. The current deployment
+POC proves the host shape with Workers and Durable Objects.
+
+### Cloudflare notes
+
+- Cron Triggers wake due work through `scheduled()`.
+- Durable Objects, D1, Queues, and Workers are natural adapter targets.
+- Keep each scheduled invocation bounded and let the store decide what is due.
+
+## Railway
+
+Railway Cron Jobs run a service on a crontab expression. The service should do
+bounded sweep work and then exit.
+
+Create a small sweep command:
+
+```ts
+// scripts/workflow-sweep.ts
+import { createRailwayWorkflowCronCommand } from '@tanstack/workflow-railway'
+import { workflowRuntime } from '../src/workflows/runtime.server'
+
+const sweep = createRailwayWorkflowCronCommand({
+  runtime: workflowRuntime,
+  maxScheduledRuns: 25,
+  maxTimers: 25,
+  maxDurationMs: 55_000,
+  logSummary: true,
+})
+
+await sweep()
+```
+
+Configure the Railway service with config-as-code:
+
+```toml
+# railway.toml
+[deploy]
+startCommand = "pnpm workflow:sweep"
+cronSchedule = "*/5 * * * *"
+restartPolicyType = "NEVER"
+```
+
+Or with JSON:
+
+```json
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "startCommand": "pnpm workflow:sweep",
+    "cronSchedule": "*/5 * * * *",
+    "restartPolicyType": "NEVER"
+  }
+}
+```
+
+Use the same durable store as the rest of your app.
+
+### Railway notes
+
+- Cron Jobs run the service start command on a schedule and expect the process
+  to terminate when the task is done.
+- Railway supports `railway.toml` and `railway.json` config-as-code for deploy
+  settings, including `startCommand` and `cronSchedule`.
+- Railway skips a cron run if the previous one is still running, so the store
+  still needs leases and idempotency for correctness.
+- Railway cron schedules use UTC and cannot run more frequently than every five
+  minutes.
+- Railway Postgres is a natural first durable store for app-embedded workflows.
+
+## Netlify
+
+Install:
+
+```bash
+pnpm add @tanstack/workflow-netlify
+```
+
+Create a Scheduled Function:
+
+```ts
+// netlify/functions/workflow-sweep-background.ts
+import {
+  createNetlifyWorkflowSweepHandler,
+} from '@tanstack/workflow-netlify'
+import { workflowRuntime } from '../../src/workflows/runtime.server'
+
+export default createNetlifyWorkflowSweepHandler({
+  runtime: workflowRuntime,
+  maxScheduledRuns: 25,
+  maxTimers: 25,
+  maxDurationMs: 25_000,
+})
+
+export const config = {
+  schedule: '*/5 * * * *',
+}
+```
+
+The adapter returns a compact summary:
+
+```json
+{
+  "ok": true,
+  "summary": {
+    "materialized": 1,
+    "scheduled": { "completed": 1 },
+    "timers": {},
+    "eventCount": 8,
+    "returnedEventCount": 0
+  },
+  "deadlineReached": false,
+  "remainingMayExist": false
+}
+```
+
+Use `includeSweepResult: true` only for debugging because it can return large
+event arrays.
+
+### Netlify notes
+
+- Scheduled Functions are wake-up ticks.
+- Published deploys own scheduled function execution.
+- Use a durable external store such as Postgres, Netlify Database, Neon, or
+  another store adapter.
+- Keep `maxDurationMs` below the function timeout.
 
 ## Vercel
 
@@ -102,86 +255,6 @@ The adapter validates that header when you pass `cronSecret`.
   sweeps, use a plan that supports the cadence or call the sweep through another
   scheduler.
 - Use a durable external store such as Postgres. Function memory is not a store.
-
-## Netlify
-
-Install:
-
-```bash
-pnpm add @tanstack/workflow-netlify
-```
-
-Create a Scheduled Function:
-
-```ts
-// netlify/functions/workflow-sweep-background.ts
-import {
-  createNetlifyWorkflowSweepConfig,
-  createNetlifyWorkflowSweepHandler,
-} from '@tanstack/workflow-netlify'
-import { workflowRuntime } from '../../src/workflows/runtime.server'
-
-export default createNetlifyWorkflowSweepHandler({
-  runtime: workflowRuntime,
-  maxScheduledRuns: 25,
-  maxTimers: 25,
-  maxDurationMs: 25_000,
-})
-
-export const config = createNetlifyWorkflowSweepConfig({
-  schedule: '*/5 * * * *',
-})
-```
-
-The adapter returns a compact summary:
-
-```json
-{
-  "ok": true,
-  "summary": {
-    "materialized": 1,
-    "scheduled": { "completed": 1 },
-    "timers": {},
-    "eventCount": 8,
-    "returnedEventCount": 0
-  },
-  "deadlineReached": false,
-  "remainingMayExist": false
-}
-```
-
-Use `includeSweepResult: true` only for debugging because it can return large
-event arrays.
-
-### Netlify notes
-
-- Scheduled Functions are wake-up ticks.
-- Published deploys own scheduled function execution.
-- Use a durable external store such as Postgres, Netlify Database, Neon, or
-  another store adapter.
-- Keep `maxDurationMs` below the function timeout.
-
-## Cloudflare
-
-Cloudflare can run the same runtime shape with a Worker `scheduled()` handler:
-
-```ts
-export default {
-  async scheduled(event: ScheduledEvent, env: Env) {
-    const runtime = createWorkflowRuntime(env)
-    await runtime.sweep({
-      now: event.scheduledTime,
-      maxScheduledRuns: 25,
-      maxTimers: 25,
-      maxDurationMs: 25_000,
-      includeEvents: false,
-    })
-  },
-}
-```
-
-Cloudflare-specific store adapters are separate work. The current deployment
-POC proves the host shape with Workers and Durable Objects.
 
 ## Choosing a sweep cadence
 

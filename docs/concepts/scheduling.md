@@ -39,7 +39,14 @@ await workflowRuntime.sweep({
 
 ## The core model in one paragraph
 
-You declare a normal workflow. Something outside the engine (cron daemon, EventBridge, Durable Object alarm, Vercel Cron Job, a `setInterval` in a worker, anything) fires on schedule. Each tick calls `runWorkflow({ workflow, input, runStore })` with fresh input. The workflow runs end-to-end and finishes; the next tick is a new `runId`. No "loop forever with sleep" — log doesn't grow, replay cost is constant, and "when's the next run?" is answerable from the scheduler, not from the engine.
+You declare a normal workflow. Something outside the engine (cron daemon,
+Cloudflare Cron Trigger, Railway Cron Job, Netlify Scheduled Function,
+EventBridge rule, a `setInterval` in a worker, Vercel Cron Job, anything) fires
+on schedule. Each tick calls `runWorkflow({ workflow, input, runStore })` with
+fresh input. The workflow runs end-to-end and finishes; the next tick is a new
+`runId`. No "loop forever with sleep" — log doesn't grow, replay cost is
+constant, and "when's the next run?" is answerable from the scheduler, not from
+the engine.
 
 ## Recipe: a node process with `node-cron`
 
@@ -107,26 +114,35 @@ export default {
 }
 ```
 
-## Recipe: Vercel Cron Job hitting a route
+## Recipe: Railway Cron Job running a command
 
-```jsonc
-// vercel.json
-{
-  "crons": [{ "path": "/api/cron/daily-report", "schedule": "0 9 * * MON" }]
+```ts
+// scripts/daily-report.ts
+import { runWorkflow } from '@tanstack/workflow-core'
+import { dailyReport } from '../workflows/daily-report'
+import { runStore } from '../storage'
+
+for await (const _ of runWorkflow({
+  workflow: dailyReport,
+  input: { triggeredAt: Date.now() },
+  runStore,
+})) {
+  /* log / forward */
 }
 ```
 
-```ts
-// app/api/cron/daily-report/route.ts (App Router) or pages/api/cron/...
-import { runWorkflow } from '@tanstack/workflow-core'
-import { dailyReport } from '@/workflows/daily-report'
-import { runStore } from '@/lib/run-store'
+Configure the service's cron schedule in Railway and make the command exit after
+the workflow reaches completion or its next pause.
 
-export async function GET(req: Request) {
-  // Vercel signs the request; verify the secret before running
-  if (req.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new Response('unauthorized', { status: 401 })
-  }
+## Recipe: Netlify Scheduled Function
+
+```ts
+// netlify/functions/daily-report.ts
+import { runWorkflow } from '@tanstack/workflow-core'
+import { dailyReport } from '../../src/workflows/daily-report'
+import { runStore } from '../../src/storage'
+
+export async function handler() {
   for await (const _ of runWorkflow({
     workflow: dailyReport,
     input: { triggeredAt: Date.now() },
@@ -134,7 +150,11 @@ export async function GET(req: Request) {
   })) {
     /* … */
   }
-  return new Response('ok')
+  return { statusCode: 200, body: 'ok' }
+}
+
+export const config = {
+  schedule: '0 9 * * MON',
 }
 ```
 
@@ -166,9 +186,42 @@ export const handler = async () => {
 }
 ```
 
+## Recipe: Vercel Cron Job hitting a route
+
+```jsonc
+// vercel.json
+{
+  "crons": [{ "path": "/api/cron/daily-report", "schedule": "0 9 * * MON" }]
+}
+```
+
+```ts
+// app/api/cron/daily-report/route.ts (App Router) or pages/api/cron/...
+import { runWorkflow } from '@tanstack/workflow-core'
+import { dailyReport } from '@/workflows/daily-report'
+import { runStore } from '@/lib/run-store'
+
+export async function GET(req: Request) {
+  // Vercel signs the request; verify the secret before running
+  if (req.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
+    return new Response('unauthorized', { status: 401 })
+  }
+  for await (const _ of runWorkflow({
+    workflow: dailyReport,
+    input: { triggeredAt: Date.now() },
+    runStore,
+  })) {
+    /* … */
+  }
+  return new Response('ok')
+}
+```
+
 ## Recipe: skip-overlap policy
 
-Most schedulers (`cron`, EventBridge, Vercel) don't know whether the previous tick is still running. If you want "skip the new tick if the previous one is still in flight," gate on a marker in the run store before starting:
+Most schedulers (`cron`, EventBridge, Vercel) don't know whether the previous
+tick is still running. If you want "skip the new tick if the previous one is
+still in flight," gate on a marker in the run store before starting:
 
 ```ts
 async function tick() {
