@@ -182,6 +182,59 @@ describe('ctx.now()', () => {
       output: { ts: recordedTs },
     })
   })
+
+  it('matches explicit ids instead of call order on replay', async () => {
+    const wfV1 = createWorkflow({
+      id: 'now-explicit-id',
+      version: 'v1',
+      output: z.object({ first: z.number(), second: z.number() }),
+    }).handler(async (ctx) => {
+      const first = await ctx.now({ id: 'first-timestamp' })
+      const second = await ctx.now({ id: 'second-timestamp' })
+      await ctx.approve({ id: 'gate', title: 'go?' })
+      return { first, second }
+    })
+
+    const store = inMemoryRunStore()
+    const phase1 = await collect(
+      runWorkflow({ workflow: wfV1, input: {}, runStore: store }),
+    )
+    const runId = findRunId(phase1)
+    const log = await store.getEvents(runId)
+    const firstRecorded = log.find(
+      (e) => e.type === 'NOW_RECORDED' && e.stepId === 'first-timestamp',
+    ) as Extract<(typeof log)[number], { type: 'NOW_RECORDED' }>
+    const secondRecorded = log.find(
+      (e) => e.type === 'NOW_RECORDED' && e.stepId === 'second-timestamp',
+    ) as Extract<(typeof log)[number], { type: 'NOW_RECORDED' }>
+
+    const wfV1Reordered = createWorkflow({
+      id: 'now-explicit-id',
+      version: 'v1',
+      output: z.object({ first: z.number(), second: z.number() }),
+    }).handler(async (ctx) => {
+      const second = await ctx.now({ id: 'second-timestamp' })
+      await ctx.approve({ id: 'gate', title: 'go?' })
+      const first = await ctx.now({ id: 'first-timestamp' })
+      return { first, second }
+    })
+
+    const phase2 = await collect(
+      runWorkflow({
+        workflow: wfV1Reordered,
+        runId,
+        approval: { approvalId: findApprovalId(phase1), approved: true },
+        runStore: store,
+      }),
+    )
+
+    expect(phase2.find((e) => e.type === 'RUN_FINISHED')).toMatchObject({
+      output: {
+        first: firstRecorded.value,
+        second: secondRecorded.value,
+      },
+    })
+  })
 })
 
 describe('ctx.uuid()', () => {
@@ -223,6 +276,63 @@ describe('ctx.uuid()', () => {
 
     expect(phase2.find((e) => e.type === 'RUN_FINISHED')).toMatchObject({
       output: { id: recordedId },
+    })
+  })
+})
+
+describe('ctx.approve()', () => {
+  it('persists explicit durable ids and metadata', async () => {
+    const wf = createWorkflow({ id: 'approve-id-meta' }).handler(
+      async (ctx) => {
+        const decision = await ctx.approve({
+          id: 'legal-review',
+          title: 'Ship?',
+          meta: { assignee: 'legal' },
+        })
+        return { approved: decision.approved }
+      },
+    )
+
+    const store = inMemoryRunStore()
+    const phase1 = await collect(
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
+    )
+    const runId = findRunId(phase1)
+    const requested = phase1.find((e) => e.type === 'APPROVAL_REQUESTED')
+    expect(requested).toMatchObject({
+      stepId: 'legal-review',
+      meta: { assignee: 'legal' },
+    })
+
+    const runState = await store.getRunState(runId)
+    expect(runState?.awaiting).toEqual([
+      {
+        type: 'approval',
+        stepId: 'legal-review',
+        approvalId: findApprovalId(phase1),
+        title: 'Ship?',
+        meta: { assignee: 'legal' },
+      },
+    ])
+    expect(runState?.pendingApproval).toMatchObject({
+      stepId: 'legal-review',
+      meta: { assignee: 'legal' },
+    })
+
+    const phase2 = await collect(
+      runWorkflow({
+        workflow: wf,
+        runId,
+        approval: { approvalId: findApprovalId(phase1), approved: true },
+        runStore: store,
+      }),
+    )
+
+    expect(phase2.find((e) => e.type === 'APPROVAL_RESOLVED')).toMatchObject({
+      stepId: 'legal-review',
+    })
+    expect(phase2.find((e) => e.type === 'RUN_FINISHED')).toMatchObject({
+      output: { approved: true },
     })
   })
 })

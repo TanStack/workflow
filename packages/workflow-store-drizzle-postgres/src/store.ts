@@ -165,6 +165,7 @@ export function createDrizzlePostgresWorkflowStore(
             input,
             output,
             error,
+            awaiting,
             waiting_for,
             pending_approval,
             created_at,
@@ -178,6 +179,7 @@ export function createDrizzlePostgresWorkflowStore(
             ${encodeJson(state.input)}::jsonb,
             ${encodeJsonOrNull(state.output)}::jsonb,
             ${encodeJsonOrNull(state.error)}::jsonb,
+            ${encodeJsonOrNull(state.awaiting)}::jsonb,
             ${encodeJsonOrNull(state.waitingFor)}::jsonb,
             ${encodeJsonOrNull(state.pendingApproval)}::jsonb,
             ${state.createdAt},
@@ -190,6 +192,7 @@ export function createDrizzlePostgresWorkflowStore(
             input = excluded.input,
             output = excluded.output,
             error = excluded.error,
+            awaiting = excluded.awaiting,
             waiting_for = excluded.waiting_for,
             pending_approval = excluded.pending_approval,
             created_at = excluded.created_at,
@@ -204,6 +207,7 @@ export function createDrizzlePostgresWorkflowStore(
             input,
             output,
             error,
+            awaiting,
             waiting_for,
             pending_approval,
             wake_at,
@@ -218,6 +222,7 @@ export function createDrizzlePostgresWorkflowStore(
             ${encodeJson(state.input)}::jsonb,
             ${encodeJsonOrNull(state.output)}::jsonb,
             ${encodeJsonOrNull(state.error)}::jsonb,
+            ${encodeJsonOrNull(state.awaiting)}::jsonb,
             ${encodeJsonOrNull(state.waitingFor)}::jsonb,
             ${encodeJsonOrNull(state.pendingApproval)}::jsonb,
             ${
@@ -235,6 +240,7 @@ export function createDrizzlePostgresWorkflowStore(
             input = excluded.input,
             output = excluded.output,
             error = excluded.error,
+            awaiting = excluded.awaiting,
             waiting_for = excluded.waiting_for,
             pending_approval = excluded.pending_approval,
             wake_at = excluded.wake_at,
@@ -402,6 +408,7 @@ export function createDrizzlePostgresWorkflowStore(
         update ${tableSql.runs}
         set
           status = 'paused',
+          awaiting = ${encodeJsonOrNull(args.awaiting)}::jsonb,
           waiting_for = ${encodeJsonOrNull(args.waitingFor)}::jsonb,
           pending_approval = ${encodeJsonOrNull(args.pendingApproval)}::jsonb,
           wake_at = ${args.wakeAt ?? null},
@@ -418,6 +425,7 @@ export function createDrizzlePostgresWorkflowStore(
         set
           status = 'finished',
           output = ${encodeJson(args.output)}::jsonb,
+          awaiting = null,
           waiting_for = null,
           pending_approval = null,
           wake_at = null,
@@ -435,6 +443,7 @@ export function createDrizzlePostgresWorkflowStore(
         set
           status = 'errored',
           error = ${encodeJson(args.error)}::jsonb,
+          awaiting = null,
           waiting_for = null,
           pending_approval = null,
           wake_at = null,
@@ -524,7 +533,7 @@ export function createDrizzlePostgresWorkflowStore(
         )
         if (existingDelivery) return { kind: 'duplicate', run }
 
-        if (run.waitingFor?.signalName !== args.delivery.name) {
+        if (!isRunWaitingForSignal(run, args.delivery)) {
           return { kind: 'not-waiting', run }
         }
 
@@ -549,6 +558,7 @@ export function createDrizzlePostgresWorkflowStore(
             update ${tableSql.runs}
             set
               status = 'queued',
+              awaiting = null,
               waiting_for = null,
               pending_approval = null,
               wake_at = null,
@@ -578,7 +588,7 @@ export function createDrizzlePostgresWorkflowStore(
         )
         if (existingDelivery) return { kind: 'duplicate', run }
 
-        if (run.pendingApproval?.approvalId !== args.approval.approvalId) {
+        if (!isRunWaitingForApproval(run, args.approval)) {
           return { kind: 'not-waiting', run }
         }
 
@@ -597,6 +607,7 @@ export function createDrizzlePostgresWorkflowStore(
             update ${tableSql.runs}
             set
               status = 'queued',
+              awaiting = null,
               waiting_for = null,
               pending_approval = null,
               wake_at = null,
@@ -824,6 +835,7 @@ interface RunRow {
   input: unknown
   output: unknown
   error: unknown
+  awaiting: unknown
   waiting_for: unknown
   pending_approval: unknown
   wake_at: number | string | null
@@ -841,6 +853,7 @@ interface RunStateRow {
   input: unknown
   output: unknown
   error: unknown
+  awaiting: unknown
   waiting_for: unknown
   pending_approval: unknown
   created_at: number | string
@@ -927,6 +940,7 @@ function schemaStatements(
       input jsonb not null,
       output jsonb,
       error jsonb,
+      awaiting jsonb,
       waiting_for jsonb,
       pending_approval jsonb,
       wake_at bigint,
@@ -935,6 +949,7 @@ function schemaStatements(
       created_at bigint not null,
       updated_at bigint not null
     )`,
+    `alter table ${runs} add column if not exists awaiting jsonb`,
     `create index if not exists ${quoteIdent(`${tables.runs}_status_idx`)}
       on ${runs} (status, updated_at)`,
     `create index if not exists ${quoteIdent(`${tables.runs}_lease_idx`)}
@@ -947,11 +962,13 @@ function schemaStatements(
       input jsonb not null,
       output jsonb,
       error jsonb,
+      awaiting jsonb,
       waiting_for jsonb,
       pending_approval jsonb,
       created_at bigint not null,
       updated_at bigint not null
     )`,
+    `alter table ${runStates} add column if not exists awaiting jsonb`,
     `create table if not exists ${eventLocks} (
       run_id text primary key,
       created_at bigint not null
@@ -1158,6 +1175,7 @@ function runFromRow(row: RunRow): WorkflowExecution {
     input: decodeJson(row.input),
     output: decodeJsonOrUndefined(row.output),
     error: decodeJsonOrUndefined(row.error),
+    awaiting: decodeJsonOrUndefined(row.awaiting),
     waitingFor: decodeJsonOrUndefined(row.waiting_for),
     pendingApproval: decodeJsonOrUndefined(row.pending_approval),
     wakeAt: numberOrUndefined(row.wake_at),
@@ -1182,6 +1200,7 @@ function runStateFromRow(row: RunStateRow): RunState {
     input: decodeJson(row.input),
     output: decodeJsonOrUndefined(row.output),
     error: decodeJsonOrUndefined(row.error),
+    awaiting: decodeJsonOrUndefined(row.awaiting),
     waitingFor: decodeJsonOrUndefined(row.waiting_for),
     pendingApproval: decodeJsonOrUndefined(row.pending_approval),
     createdAt: Number(row.created_at),
@@ -1208,6 +1227,54 @@ function timerFromRow(row: TimerRow): TimerWakeup {
     wakeAt: Number(row.wake_at),
     signalId: row.signal_id,
   }
+}
+
+function isRunWaitingForSignal(
+  run: WorkflowExecution,
+  delivery: DeliverSignalArgs['delivery'],
+) {
+  return (
+    signalAwaitableMatches(run.waitingFor, delivery) ||
+    run.awaiting?.some(
+      (awaitable) =>
+        awaitable.type === 'signal' &&
+        signalAwaitableMatches(awaitable, delivery),
+    ) === true
+  )
+}
+
+function signalAwaitableMatches(
+  awaitable:
+    | NonNullable<WorkflowExecution['waitingFor']>
+    | Extract<
+        NonNullable<WorkflowExecution['awaiting']>[number],
+        {
+          type: 'signal'
+        }
+      >
+    | undefined,
+  delivery: DeliverSignalArgs['delivery'],
+) {
+  return (
+    awaitable?.signalName === delivery.name &&
+    (delivery.stepId === undefined ||
+      awaitable.stepId === undefined ||
+      awaitable.stepId === delivery.stepId)
+  )
+}
+
+function isRunWaitingForApproval(
+  run: WorkflowExecution,
+  approval: DeliverApprovalArgs['approval'],
+) {
+  return (
+    run.pendingApproval?.approvalId === approval.approvalId ||
+    run.awaiting?.some(
+      (awaitable) =>
+        awaitable.type === 'approval' &&
+        awaitable.approvalId === approval.approvalId,
+    ) === true
+  )
 }
 
 function scheduleFromRow(row: ScheduleRow) {
@@ -1241,6 +1308,7 @@ function toRunSummary(row: RunRow): RunSummary {
     workflowId: run.workflowId,
     workflowVersion: run.workflowVersion,
     status: run.status,
+    awaiting: run.awaiting,
     waitingFor: run.waitingFor,
     pendingApproval: run.pendingApproval,
     wakeAt: run.wakeAt,

@@ -1,27 +1,17 @@
 ---
-id: ApproveOptions
-title: ApproveOptions
+id: SleepOptions
+title: SleepOptions
 ---
 
-# Interface: ApproveOptions
+# Interface: SleepOptions
 
-Defined in: [packages/workflow-core/src/types.ts:283](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L283)
+Defined in: [packages/workflow-core/src/types.ts:279](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L279)
 
 ## Extends
 
 - [`DurableOperationOptions`](DurableOperationOptions.md)
 
 ## Properties
-
-### description?
-
-```ts
-optional description: string;
-```
-
-Defined in: [packages/workflow-core/src/types.ts:285](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L285)
-
-***
 
 ### id?
 
@@ -54,13 +44,3 @@ Free-form host/UI metadata copied into the operation's log event.
 #### Inherited from
 
 [`DurableOperationOptions`](DurableOperationOptions.md).[`meta`](DurableOperationOptions.md#meta)
-
-***
-
-### title
-
-```ts
-title: string;
-```
-
-Defined in: [packages/workflow-core/src/types.ts:284](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L284)

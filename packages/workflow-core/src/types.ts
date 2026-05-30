@@ -19,6 +19,19 @@ export interface SerializedError {
   stack?: string
 }
 
+export type WorkflowMetadata = Record<string, unknown>
+
+export interface DurableOperationOptions {
+  /**
+   * Stable durable-operation identifier. Supplying this lets replay
+   * find the right log record even if surrounding operations are
+   * reordered in a later workflow version.
+   */
+  id?: string
+  /** Free-form host/UI metadata copied into the operation's log event. */
+  meta?: WorkflowMetadata
+}
+
 // ============================================================
 // Workflow event stream (unified log entry + transport event)
 // ============================================================
@@ -83,6 +96,7 @@ export type WorkflowEvent =
       type: 'STEP_STARTED'
       ts: number
       stepId: string
+      meta?: WorkflowMetadata
       audience?: string
     }
   | {
@@ -91,6 +105,7 @@ export type WorkflowEvent =
       stepId: string
       result: unknown
       attempts?: ReadonlyArray<StepAttempt>
+      meta?: WorkflowMetadata
       audience?: string
     }
   | {
@@ -99,6 +114,7 @@ export type WorkflowEvent =
       stepId: string
       error: SerializedError
       attempts?: ReadonlyArray<StepAttempt>
+      meta?: WorkflowMetadata
       audience?: string
     }
   // ── Signal (ctx.waitForEvent, ctx.sleep) ──────────────────────
@@ -121,6 +137,7 @@ export type WorkflowEvent =
        *  `signalId` is a lost race. */
       signalId?: string
       payload: unknown
+      meta?: WorkflowMetadata
       audience?: string
     }
   // ── Approval (ctx.approve) ────────────────────────────────────
@@ -131,6 +148,7 @@ export type WorkflowEvent =
       approvalId: string
       title: string
       description?: string
+      meta?: WorkflowMetadata
       audience?: string
     }
   | {
@@ -140,6 +158,7 @@ export type WorkflowEvent =
       approvalId: string
       approved: boolean
       feedback?: string
+      meta?: WorkflowMetadata
       audience?: string
     }
   // ── Deterministic recording (ctx.now, ctx.uuid) ────────────────
@@ -148,6 +167,7 @@ export type WorkflowEvent =
       ts: number
       stepId: string
       value: number
+      meta?: WorkflowMetadata
       audience?: string
     }
   | {
@@ -155,6 +175,7 @@ export type WorkflowEvent =
       ts: number
       stepId: string
       value: string
+      meta?: WorkflowMetadata
       audience?: string
     }
   // ── State + custom ────────────────────────────────────────────
@@ -224,6 +245,8 @@ export interface StepRetryOptions {
 }
 
 export interface StepOptions {
+  /** Free-form host/UI metadata copied into STEP_* log events. */
+  meta?: WorkflowMetadata
   retry?: StepRetryOptions
   /** Per-attempt timeout in ms. */
   timeout?: number
@@ -240,18 +263,24 @@ export interface StepAttempt {
 // Wait-for-event / approve options
 // ============================================================
 
-export interface WaitForEventOptions<TPayload = unknown> {
+export interface WaitForEventOptions<
+  TPayload = unknown,
+> extends DurableOperationOptions {
   /** UTC ms wake deadline. Surfaced on `RunState.waitingFor.deadline`
    *  so hosts can build time-indexed worker jobs. */
   deadline?: number
   /** Free-form metadata the host or UI may render. */
-  meta?: Record<string, unknown>
+  meta?: WorkflowMetadata
   /** Optional schema for validating the incoming payload before
    *  resuming the workflow. */
   schema?: StandardSchemaV1<unknown, TPayload>
 }
 
-export interface ApproveOptions {
+export interface SleepOptions extends DurableOperationOptions {}
+
+export interface DeterministicValueOptions extends DurableOperationOptions {}
+
+export interface ApproveOptions extends DurableOperationOptions {
   title: string
   description?: string
 }
@@ -260,6 +289,7 @@ export interface ApprovalResult {
   approved: boolean
   approvalId: string
   feedback?: string
+  meta?: WorkflowMetadata
 }
 
 // ============================================================
@@ -281,15 +311,15 @@ export interface BaseCtx<TInput, TState> {
     fn: (stepCtx: StepContext) => T | Promise<T>,
     options?: StepOptions,
   ) => Promise<T>
-  sleep: (ms: number) => Promise<void>
-  sleepUntil: (timestamp: number) => Promise<void>
+  sleep: (ms: number, options?: SleepOptions) => Promise<void>
+  sleepUntil: (timestamp: number, options?: SleepOptions) => Promise<void>
   waitForEvent: <TPayload = unknown>(
     name: string,
     options?: WaitForEventOptions<TPayload>,
   ) => Promise<TPayload>
   approve: (options: ApproveOptions) => Promise<ApprovalResult>
-  now: () => Promise<number>
-  uuid: () => Promise<string>
+  now: (options?: DeterministicValueOptions) => Promise<number>
+  uuid: (options?: DeterministicValueOptions) => Promise<string>
 
   // ── Observability ─────────────────────────────────────────────
   /** Emit a CUSTOM event for UI/devtools consumption. Does not enter
@@ -436,10 +466,14 @@ export interface SignalDelivery<TPayload = unknown> {
   /** Idempotency token. Same signalId at the same stepId = no-op
    *  retry; different signalId = lost race. */
   signalId: string
+  /** Optional durable-operation id for the awaited signal. */
+  stepId?: string
   /** Name of the awaited signal (the same name passed to
    *  `ctx.waitForEvent(name, ...)`). */
   name: string
   payload: TPayload
+  /** Free-form host/UI metadata copied into SIGNAL_RESOLVED. */
+  meta?: WorkflowMetadata
 }
 
 // ============================================================
@@ -452,6 +486,23 @@ export type RunStatus =
   | 'finished'
   | 'errored'
   | 'aborted'
+
+export type RunAwaitable =
+  | {
+      type: 'signal'
+      stepId?: string
+      signalName: string
+      deadline?: number
+      meta?: WorkflowMetadata
+    }
+  | {
+      type: 'approval'
+      stepId?: string
+      approvalId: string
+      title: string
+      description?: string
+      meta?: WorkflowMetadata
+    }
 
 /**
  * Persisted run metadata. State is intentionally NOT stored here —
@@ -467,17 +518,25 @@ export interface RunState<TInput = unknown, TOutput = unknown> {
   input: TInput
   output?: TOutput
   error?: SerializedError
+  /** All currently outstanding waits. Current engine versions only
+   *  create one awaitable at a time, but the persisted shape can
+   *  represent future fan-out/race primitives without replacing the
+   *  run schema. */
+  awaiting?: ReadonlyArray<RunAwaitable>
   /** Set when the run is paused awaiting an external signal. */
   waitingFor?: {
+    stepId?: string
     signalName: string
     deadline?: number
-    meta?: Record<string, unknown>
+    meta?: WorkflowMetadata
   }
   /** Set when the run is paused awaiting an approval. */
   pendingApproval?: {
+    stepId?: string
     approvalId: string
     title: string
     description?: string
+    meta?: WorkflowMetadata
   }
   createdAt: number
   updatedAt: number

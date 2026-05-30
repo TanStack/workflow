@@ -89,13 +89,22 @@ describe('signal delivery idempotency', () => {
       runWorkflow({ workflow: wf, input: {}, runStore: store2 }),
     )
     const runId2 = findRunId(phase2start)
+    const awaited = phase2start.find(
+      (
+        e,
+      ): e is Extract<
+        (typeof phase2start)[number],
+        { type: 'SIGNAL_AWAITED' }
+      > => e.type === 'SIGNAL_AWAITED',
+    )
+    expect(awaited).toBeDefined()
     // Pretend the log already has a SIGNAL_RESOLVED for this name
     // (from a separate writer) by appending it directly.
     const log = await store2.getEvents(runId2)
     await store2.appendEvent(runId2, log.length, {
       type: 'SIGNAL_RESOLVED',
       ts: Date.now(),
-      stepId: '__resolve-approval',
+      stepId: awaited!.stepId,
       name: 'approval',
       signalId: 'first-writer',
       payload: { winner: true },

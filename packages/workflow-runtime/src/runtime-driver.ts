@@ -85,8 +85,10 @@ async function deliverSignal<
   const now = args.now ?? Date.now()
   const delivery = {
     signalId: args.signalId,
+    stepId: args.stepId,
     name: args.name,
     payload: args.payload,
+    meta: args.meta,
   }
   const delivered = await config.store.deliverSignal({
     runId: args.runId,

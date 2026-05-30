@@ -5,7 +5,7 @@ title: StepRetryOptions
 
 # Interface: StepRetryOptions
 
-Defined in: [packages/workflow-core/src/types.ts:214](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L214)
+Defined in: [packages/workflow-core/src/types.ts:235](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L235)
 
 ## Properties
 
@@ -15,7 +15,7 @@ Defined in: [packages/workflow-core/src/types.ts:214](https://github.com/TanStac
 optional backoff: "exponential" | "fixed" | (attempt) => number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:218](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L218)
+Defined in: [packages/workflow-core/src/types.ts:239](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L239)
 
 Backoff between attempts. Default: 'exponential'.
 
@@ -27,7 +27,7 @@ Backoff between attempts. Default: 'exponential'.
 optional baseMs: number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:220](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L220)
+Defined in: [packages/workflow-core/src/types.ts:241](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L241)
 
 Base delay in ms for built-in backoff strategies. Default: 500.
 
@@ -39,7 +39,7 @@ Base delay in ms for built-in backoff strategies. Default: 500.
 maxAttempts: number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:216](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L216)
+Defined in: [packages/workflow-core/src/types.ts:237](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L237)
 
 Maximum total attempts including the first try. Must be >= 1.
 
@@ -51,7 +51,7 @@ Maximum total attempts including the first try. Must be >= 1.
 optional shouldRetry: (err, attempt) => boolean;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:223](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L223)
+Defined in: [packages/workflow-core/src/types.ts:244](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L244)
 
 Predicate to decide whether a given error should be retried.
  Default: retry every error.

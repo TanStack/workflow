@@ -29,7 +29,8 @@ The runtime store persists:
 
 - **Runs**: `runId`, `workflowId`, `workflowVersion`, status, input, output, and
   error.
-- **Run state**: the replay metadata needed by the core engine.
+- **Run state**: the replay metadata needed by the core engine, including
+  `awaiting[]` plus current single-wait projections for hosts.
 - **Events**: the append-only workflow event log.
 - **Timers**: due wake-ups for `ctx.sleep` and `ctx.sleepUntil`.
 - **Signals**: delivered external events with idempotency.
@@ -66,12 +67,15 @@ Run state is the small routing record beside the log. It answers questions like:
 
 - Is the run queued, running, paused, finished, or errored?
 - Which workflow version started this run?
+- Which awaitables are currently outstanding?
 - Is the run waiting for a signal?
 - Is the run waiting for an approval?
 - Is there a timer deadline?
 
 Replay still comes from the event log. Run state makes routing and wake-ups
-efficient.
+efficient. `waitingFor` and `pendingApproval` are convenient projections for
+today's one-pause-at-a-time engine. The `awaiting[]` array is the forward-facing
+shape for future fan-out, race, or multiple outstanding wait primitives.
 
 ## Timers
 

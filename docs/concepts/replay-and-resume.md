@@ -31,7 +31,10 @@ For each `ctx.step('id', fn)`:
 2. Found → return the recorded result (or rethrow the recorded error). **`fn` is NOT called.**
 3. Not found → run `fn`, append `STEP_FINISHED`, return.
 
-Same algorithm for `waitForEvent` (by `name`, sequential match), `approve` (positional), `now`, `uuid`.
+Same algorithm for `waitForEvent`, `approve`, `now`, and `uuid`: replay first
+matches the operation's durable `stepId`. `ctx.step(id, ...)` uses its first
+argument. Other primitives accept `id` in their options and otherwise use a
+generated positional internal ID.
 
 ## Determinism contract
 
@@ -44,8 +47,8 @@ const id = Math.random()             // use ctx.uuid()
 if (await fetchFlag()) { ... }       // wrap the fetch in ctx.step()
 
 // Safe:
-const t = await ctx.now()
-const id = await ctx.uuid()
+const t = await ctx.now({ id: 'started-at' })
+const id = await ctx.uuid({ id: 'correlation-id' })
 const flag = await ctx.step('flag', fetchFlag)
 if (flag) { ... }
 ```
@@ -59,7 +62,9 @@ Run pauses when the handler reaches:
 - `ctx.waitForEvent(name)` with no matching `SIGNAL_RESOLVED`
 - `ctx.sleep` / `ctx.sleepUntil` (internally a signal-wait on `__timer`)
 
-The engine writes `RunState.status = 'paused'` with `waitingFor` / `pendingApproval` populated, ends the event stream, and returns.
+The engine writes `RunState.status = 'paused'` with `awaiting[]` populated, also
+filling the current `waitingFor` / `pendingApproval` projection fields, ends the
+event stream, and returns.
 
 Resume:
 
@@ -70,7 +75,7 @@ runWorkflow({
   runStore,
   // pick one:
   approval:        { approvalId, approved, feedback? },
-  signalDelivery:  { signalId, name, payload },
+  signalDelivery:  { signalId, stepId?, name, payload },
 })
 ```
 
@@ -78,7 +83,9 @@ The engine appends `APPROVAL_RESOLVED` or `SIGNAL_RESOLVED` to the log, re-runs 
 
 ## Idempotency and lost races
 
-Every signal delivery carries a `signalId`. Two deliveries for the same waiting name:
+Every signal delivery carries a `signalId`. If the waited operation has an
+explicit ID, pass it back as `signalDelivery.stepId`. Two deliveries for the
+same waiting operation:
 
 - **Same `signalId`** → idempotent. The engine no-ops and returns success.
 - **Different `signalId`** → the loser sees `RUN_ERRORED { code: 'signal_lost' }`. The winner's payload is what the workflow sees.
@@ -136,10 +143,10 @@ Terminal runs remain in the store so attach calls and webhook retries can read t
   // RUN_STARTED — emit only, not in the persisted log
   STEP_FINISHED   { stepId: 'fetch-user', result: { id: 'u-1', tier: 'pro' } },
   NOW_RECORDED    { stepId: '__now-0', value: 1737499200000 },
-  SIGNAL_AWAITED  { stepId: '__wait-payment-0', name: 'payment', deadline: ... },
-  SIGNAL_RESOLVED { stepId: '__resolve-payment', name: 'payment', signalId: 'evt-1', payload: { ... } },
-  APPROVAL_REQUESTED { approvalId: 'a-1', title: 'Continue?' },
-  APPROVAL_RESOLVED  { approvalId: 'a-1', approved: true },
+  SIGNAL_AWAITED  { stepId: 'payment-webhook', name: 'payment', deadline: ... },
+  SIGNAL_RESOLVED { stepId: 'payment-webhook', name: 'payment', signalId: 'evt-1', payload: { ... } },
+  APPROVAL_REQUESTED { stepId: 'review', approvalId: 'a-1', title: 'Continue?' },
+  APPROVAL_RESOLVED  { stepId: 'review', approvalId: 'a-1', approved: true },
   STEP_FINISHED   { stepId: 'finalize', result: { ok: true } },
   RUN_FINISHED    { runId, output: { ok: true } },
 ]

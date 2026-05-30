@@ -7,10 +7,12 @@ import type {
   ApproveOptions,
   BaseCtx,
   Ctx,
+  DeterministicValueOptions,
   RunState,
   RunStore,
   SerializedError,
   SignalDelivery,
+  SleepOptions,
   StepContext,
   StepOptions,
   StepRetryOptions,
@@ -302,6 +304,7 @@ async function resumeRun(options: DriveOptions): Promise<void> {
     ...persistedState,
     status: 'running',
     workflowVersion: effectiveWorkflow.version,
+    awaiting: undefined,
     waitingFor: undefined,
     pendingApproval: undefined,
     updatedAt: Date.now(),
@@ -421,6 +424,7 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
     nextLogIndex: history.length,
     consumed: new Set(),
     counters: {
+      wait: 0,
       sleep: 0,
       approve: 0,
       now: 0,
@@ -438,12 +442,12 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
     signal: abortController.signal,
 
     step: (id, fn, opts) => engineStep(engine, id, fn, opts),
-    sleep: (ms) => engineSleep(engine, ms),
-    sleepUntil: (ts) => engineSleepUntil(engine, ts),
+    sleep: (ms, opts) => engineSleep(engine, ms, opts),
+    sleepUntil: (ts, opts) => engineSleepUntil(engine, ts, opts),
     waitForEvent: (name, opts) => engineWaitForEvent(engine, name, opts),
     approve: (opts) => engineApprove(engine, opts),
-    now: () => engineNow(engine),
-    uuid: () => engineUuid(engine),
+    now: (opts) => engineNow(engine, opts),
+    uuid: (opts) => engineUuid(engine, opts),
 
     emit: (name, value) => {
       const event: WorkflowEvent = {
@@ -563,6 +567,7 @@ interface EngineRuntime {
   /** Per-kind counters for primitives without user-supplied IDs.
    *  Used to generate stable per-call stepIds. */
   counters: {
+    wait: number
     sleep: number
     approve: number
     now: number
@@ -610,7 +615,12 @@ async function engineStep<T>(
   }
 
   // Fresh execution.
-  engine.emit({ type: 'STEP_STARTED', ts: Date.now(), stepId })
+  engine.emit({
+    type: 'STEP_STARTED',
+    ts: Date.now(),
+    stepId,
+    meta: options?.meta,
+  })
 
   const startedAt = Date.now()
   const retryPolicy = options?.retry ?? engine.workflow.defaultStepRetry
@@ -719,6 +729,7 @@ async function engineStep<T>(
       stepId,
       error: serializeError(lastError),
       attempts: attempts.length > 1 ? attempts : undefined,
+      meta: options?.meta,
     }
     await emitAndAppend(
       engine.runStore,
@@ -737,6 +748,7 @@ async function engineStep<T>(
     stepId,
     result,
     attempts: attempts.length > 1 ? attempts : undefined,
+    meta: options?.meta,
   }
   await emitAndAppend(
     engine.runStore,
@@ -754,14 +766,17 @@ async function engineWaitForEvent<TPayload>(
   options?: WaitForEventOptions<TPayload>,
 ): Promise<TPayload> {
   flushStateDelta(engine)
+  const stepId = options?.id ?? `__wait-${name}-${engine.counters.wait++}`
 
-  // Sequential match: first unconsumed SIGNAL_RESOLVED with this name.
+  // Match by durable operation id. With no explicit id we still use
+  // the generated positional id for backwards-compatible ergonomics.
   const cached = findCheckpoint(
     engine,
     (e, i) =>
       !engine.consumed.has(i) &&
       e.type === 'SIGNAL_RESOLVED' &&
-      e.name === name,
+      e.name === name &&
+      e.stepId === stepId,
   )
   if (cached) {
     const payload = (
@@ -785,7 +800,6 @@ async function engineWaitForEvent<TPayload>(
   }
 
   // Not yet resolved — pause the run.
-  const stepId = `__wait-${name}-${engine.counters.sleep++}`
   await emitAndAppend(
     engine.runStore,
     engine.runId,
@@ -808,7 +822,17 @@ async function engineWaitForEvent<TPayload>(
     await engine.runStore.setRunState(engine.runId, {
       ...persisted,
       status: 'paused',
+      awaiting: [
+        {
+          type: 'signal',
+          stepId,
+          signalName: name,
+          deadline: options?.deadline,
+          meta: options?.meta,
+        },
+      ],
       waitingFor: {
+        stepId,
         signalName: name,
         deadline: options?.deadline,
         meta: options?.meta,
@@ -825,12 +849,21 @@ async function engineWaitForEvent<TPayload>(
 function engineSleepUntil(
   engine: EngineRuntime,
   timestamp: number,
+  options?: SleepOptions,
 ): Promise<void> {
-  return engineWaitForEvent<void>(engine, '__timer', { deadline: timestamp })
+  return engineWaitForEvent<void>(engine, '__timer', {
+    ...options,
+    id: options?.id ?? `__sleep-${engine.counters.sleep++}`,
+    deadline: timestamp,
+  })
 }
 
-function engineSleep(engine: EngineRuntime, ms: number): Promise<void> {
-  return engineSleepUntil(engine, Date.now() + ms)
+function engineSleep(
+  engine: EngineRuntime,
+  ms: number,
+  options?: SleepOptions,
+): Promise<void> {
+  return engineSleepUntil(engine, Date.now() + ms, options)
 }
 
 async function engineApprove(
@@ -838,10 +871,14 @@ async function engineApprove(
   approveOptions: ApproveOptions,
 ): Promise<ApprovalResult> {
   flushStateDelta(engine)
+  const stepId = approveOptions.id ?? `__approve-${engine.counters.approve++}`
 
   const cached = findCheckpoint(
     engine,
-    (e, i) => !engine.consumed.has(i) && e.type === 'APPROVAL_RESOLVED',
+    (e, i) =>
+      !engine.consumed.has(i) &&
+      e.type === 'APPROVAL_RESOLVED' &&
+      e.stepId === stepId,
   )
   if (cached) {
     const event = cached.event as Extract<
@@ -852,10 +889,10 @@ async function engineApprove(
       approved: event.approved,
       approvalId: event.approvalId,
       feedback: event.feedback,
+      meta: event.meta,
     }
   }
 
-  const stepId = `__approve-${engine.counters.approve++}`
   const approvalId = generateId('approval')
   await emitAndAppend(
     engine.runStore,
@@ -869,6 +906,7 @@ async function engineApprove(
       approvalId,
       title: approveOptions.title,
       description: approveOptions.description,
+      meta: approveOptions.meta,
     },
   )
 
@@ -877,11 +915,23 @@ async function engineApprove(
     await engine.runStore.setRunState(engine.runId, {
       ...persisted,
       status: 'paused',
+      awaiting: [
+        {
+          type: 'approval',
+          stepId,
+          approvalId,
+          title: approveOptions.title,
+          description: approveOptions.description,
+          meta: approveOptions.meta,
+        },
+      ],
       waitingFor: undefined,
       pendingApproval: {
+        stepId,
         approvalId,
         title: approveOptions.title,
         description: approveOptions.description,
+        meta: approveOptions.meta,
       },
       updatedAt: Date.now(),
     })
@@ -891,46 +941,64 @@ async function engineApprove(
   throw new WorkflowPaused()
 }
 
-async function engineNow(engine: EngineRuntime): Promise<number> {
+async function engineNow(
+  engine: EngineRuntime,
+  options?: DeterministicValueOptions,
+): Promise<number> {
   flushStateDelta(engine)
+  const stepId = options?.id ?? `__now-${engine.counters.now++}`
   const cached = findCheckpoint(
     engine,
-    (e, i) => !engine.consumed.has(i) && e.type === 'NOW_RECORDED',
+    (e, i) =>
+      !engine.consumed.has(i) &&
+      e.type === 'NOW_RECORDED' &&
+      e.stepId === stepId,
   )
   if (cached) {
     return (cached.event as Extract<WorkflowEvent, { type: 'NOW_RECORDED' }>)
       .value
   }
   const value = Date.now()
-  const stepId = `__now-${engine.counters.now++}`
   await emitAndAppend(
     engine.runStore,
     engine.runId,
     engine.nextLogIndex++,
     engine.emit,
-    { type: 'NOW_RECORDED', ts: value, stepId, value },
+    { type: 'NOW_RECORDED', ts: value, stepId, value, meta: options?.meta },
   )
   return value
 }
 
-async function engineUuid(engine: EngineRuntime): Promise<string> {
+async function engineUuid(
+  engine: EngineRuntime,
+  options?: DeterministicValueOptions,
+): Promise<string> {
   flushStateDelta(engine)
+  const stepId = options?.id ?? `__uuid-${engine.counters.uuid++}`
   const cached = findCheckpoint(
     engine,
-    (e, i) => !engine.consumed.has(i) && e.type === 'UUID_RECORDED',
+    (e, i) =>
+      !engine.consumed.has(i) &&
+      e.type === 'UUID_RECORDED' &&
+      e.stepId === stepId,
   )
   if (cached) {
     return (cached.event as Extract<WorkflowEvent, { type: 'UUID_RECORDED' }>)
       .value
   }
   const value = globalThis.crypto.randomUUID()
-  const stepId = `__uuid-${engine.counters.uuid++}`
   await emitAndAppend(
     engine.runStore,
     engine.runId,
     engine.nextLogIndex++,
     engine.emit,
-    { type: 'UUID_RECORDED', ts: Date.now(), stepId, value },
+    {
+      type: 'UUID_RECORDED',
+      ts: Date.now(),
+      stepId,
+      value,
+      meta: options?.meta,
+    },
   )
   return value
 }
@@ -1184,21 +1252,34 @@ async function appendSeed(args: {
   } = args
 
   if (signalDelivery) {
-    if (persistedState.waitingFor?.signalName !== signalDelivery.name) {
+    const waitingFor = persistedState.waitingFor
+    if (
+      waitingFor?.signalName !== signalDelivery.name ||
+      (signalDelivery.stepId !== undefined &&
+        waitingFor.stepId !== undefined &&
+        waitingFor.stepId !== signalDelivery.stepId)
+    ) {
       return {
         kind: 'lost',
         code: 'signal_lost',
         message: `Signal delivery lost: run is not waiting for "${signalDelivery.name}".`,
       }
     }
-    // Locate the most recent SIGNAL_AWAITED for this name. The
+    const targetStepId = signalDelivery.stepId ?? waitingFor.stepId
+    // Locate the most recent SIGNAL_AWAITED for this name/id. The
     // resolution attached to that await is what the caller is
     // racing against.
     let awaitedIdx = -1
+    let awaitedStepId = targetStepId
     for (let i = history.length - 1; i >= 0; i--) {
       const e = history[i]!
-      if (e.type === 'SIGNAL_AWAITED' && e.name === signalDelivery.name) {
+      if (
+        e.type === 'SIGNAL_AWAITED' &&
+        e.name === signalDelivery.name &&
+        (!targetStepId || e.stepId === targetStepId)
+      ) {
         awaitedIdx = i
+        awaitedStepId = e.stepId
         break
       }
     }
@@ -1207,7 +1288,11 @@ async function appendSeed(args: {
       // landed, classify against its signalId.
       for (let i = awaitedIdx + 1; i < history.length; i++) {
         const e = history[i]!
-        if (e.type === 'SIGNAL_RESOLVED' && e.name === signalDelivery.name) {
+        if (
+          e.type === 'SIGNAL_RESOLVED' &&
+          e.name === signalDelivery.name &&
+          (!awaitedStepId || e.stepId === awaitedStepId)
+        ) {
           if (e.signalId === signalDelivery.signalId) {
             return { kind: 'idempotent' }
           }
@@ -1225,10 +1310,11 @@ async function appendSeed(args: {
     const event: WorkflowEvent = {
       type: 'SIGNAL_RESOLVED',
       ts: Date.now(),
-      stepId: `__resolve-${signalDelivery.name}`,
+      stepId: awaitedStepId ?? `__resolve-${signalDelivery.name}`,
       name: signalDelivery.name,
       signalId: signalDelivery.signalId,
       payload: signalDelivery.payload,
+      meta: signalDelivery.meta,
     }
     try {
       await runStore.appendEvent(runId, history.length, event)
@@ -1243,6 +1329,7 @@ async function appendSeed(args: {
           if (
             e.type === 'SIGNAL_RESOLVED' &&
             e.name === signalDelivery.name &&
+            (!awaitedStepId || e.stepId === awaitedStepId) &&
             e.signalId === signalDelivery.signalId
           ) {
             return { kind: 'idempotent' }
@@ -1259,20 +1346,24 @@ async function appendSeed(args: {
   }
 
   if (approval) {
-    if (persistedState.pendingApproval?.approvalId !== approval.approvalId) {
+    const pendingApproval = persistedState.pendingApproval
+    if (pendingApproval?.approvalId !== approval.approvalId) {
       return {
         kind: 'lost',
         code: 'approval_lost',
         message: `Approval delivery lost: run is not waiting for approval "${approval.approvalId}".`,
       }
     }
+    const stepId =
+      pendingApproval.stepId ?? findApprovalRequestStepId(history, approval)
     const event: WorkflowEvent = {
       type: 'APPROVAL_RESOLVED',
       ts: Date.now(),
-      stepId: `__resolve-approval`,
+      stepId: stepId ?? `__resolve-approval`,
       approvalId: approval.approvalId,
       approved: approval.approved,
       feedback: approval.feedback,
+      meta: approval.meta,
     }
     try {
       await runStore.appendEvent(runId, history.length, event)
@@ -1285,6 +1376,7 @@ async function appendSeed(args: {
           const e = refreshed[i]!
           if (
             e.type === 'APPROVAL_RESOLVED' &&
+            (!stepId || e.stepId === stepId) &&
             e.approvalId === approval.approvalId
           ) {
             return { kind: 'idempotent' }
@@ -1301,4 +1393,20 @@ async function appendSeed(args: {
   }
 
   return { kind: 'appended' }
+}
+
+function findApprovalRequestStepId(
+  history: ReadonlyArray<WorkflowEvent>,
+  approval: ApprovalResult,
+): string | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const event = history[i]!
+    if (
+      event.type === 'APPROVAL_REQUESTED' &&
+      event.approvalId === approval.approvalId
+    ) {
+      return event.stepId
+    }
+  }
+  return undefined
 }

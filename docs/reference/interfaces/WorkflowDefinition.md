@@ -5,7 +5,7 @@ title: WorkflowDefinition
 
 # Interface: WorkflowDefinition\<TInput, TOutput, TState\>
 
-Defined in: [packages/workflow-core/src/types.ts:385](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L385)
+Defined in: [packages/workflow-core/src/types.ts:415](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L415)
 
 ## Type Parameters
 
@@ -29,7 +29,7 @@ Defined in: [packages/workflow-core/src/types.ts:385](https://github.com/TanStac
 __kind: "workflow";
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:390](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L390)
+Defined in: [packages/workflow-core/src/types.ts:420](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L420)
 
 ***
 
@@ -39,7 +39,7 @@ Defined in: [packages/workflow-core/src/types.ts:390](https://github.com/TanStac
 optional defaultStepRetry: StepRetryOptions;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:404](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L404)
+Defined in: [packages/workflow-core/src/types.ts:434](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L434)
 
 ***
 
@@ -49,7 +49,7 @@ Defined in: [packages/workflow-core/src/types.ts:404](https://github.com/TanStac
 optional description: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:392](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L392)
+Defined in: [packages/workflow-core/src/types.ts:422](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L422)
 
 ***
 
@@ -59,7 +59,7 @@ Defined in: [packages/workflow-core/src/types.ts:392](https://github.com/TanStac
 handler: (ctx) => Promise<TOutput>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:406](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L406)
+Defined in: [packages/workflow-core/src/types.ts:436](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L436)
 
 #### Parameters
 
@@ -79,7 +79,7 @@ Defined in: [packages/workflow-core/src/types.ts:406](https://github.com/TanStac
 id: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:391](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L391)
+Defined in: [packages/workflow-core/src/types.ts:421](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L421)
 
 ***
 
@@ -89,7 +89,7 @@ Defined in: [packages/workflow-core/src/types.ts:391](https://github.com/TanStac
 optional initialize: (args) => Partial<TState>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:403](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L403)
+Defined in: [packages/workflow-core/src/types.ts:433](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L433)
 
 #### Parameters
 
@@ -111,7 +111,7 @@ Defined in: [packages/workflow-core/src/types.ts:403](https://github.com/TanStac
 optional inputSchema: SchemaInput;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:400](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L400)
+Defined in: [packages/workflow-core/src/types.ts:430](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L430)
 
 ***
 
@@ -121,7 +121,7 @@ Defined in: [packages/workflow-core/src/types.ts:400](https://github.com/TanStac
 middlewares: readonly AnyMiddleware[];
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:405](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L405)
+Defined in: [packages/workflow-core/src/types.ts:435](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L435)
 
 ***
 
@@ -131,7 +131,7 @@ Defined in: [packages/workflow-core/src/types.ts:405](https://github.com/TanStac
 optional outputSchema: SchemaInput;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:401](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L401)
+Defined in: [packages/workflow-core/src/types.ts:431](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L431)
 
 ***
 
@@ -141,7 +141,7 @@ Defined in: [packages/workflow-core/src/types.ts:401](https://github.com/TanStac
 optional previousVersions: readonly WorkflowDefinition<any, any, any>[];
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:399](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L399)
+Defined in: [packages/workflow-core/src/types.ts:429](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L429)
 
 Older versions of this workflow that may still have in-flight
  runs. The engine routes a run's resume call to the version whose
@@ -155,7 +155,7 @@ Older versions of this workflow that may still have in-flight
 optional stateSchema: SchemaInput;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:402](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L402)
+Defined in: [packages/workflow-core/src/types.ts:432](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L432)
 
 ***
 
@@ -165,7 +165,7 @@ Defined in: [packages/workflow-core/src/types.ts:402](https://github.com/TanStac
 optional version: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:395](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L395)
+Defined in: [packages/workflow-core/src/types.ts:425](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L425)
 
 Caller-supplied version identifier. Used with `previousVersions`
  and `selectWorkflowVersion` for cross-version routing.

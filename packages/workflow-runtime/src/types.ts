@@ -32,6 +32,7 @@ export interface WorkflowExecution {
   input: unknown
   output?: unknown
   error?: SerializedError
+  awaiting?: RunState['awaiting']
   waitingFor?: RunState['waitingFor']
   pendingApproval?: RunState['pendingApproval']
   wakeAt?: number
@@ -107,6 +108,7 @@ export interface ReleaseRunLeaseArgs {
 
 export interface MarkRunPausedArgs {
   runId: RunId
+  awaiting?: RunState['awaiting']
   waitingFor?: RunState['waitingFor']
   pendingApproval?: RunState['pendingApproval']
   wakeAt?: number
@@ -262,6 +264,7 @@ export interface RunSummary {
   workflowId: WorkflowId
   workflowVersion?: WorkflowVersion
   status: WorkflowExecutionStatus
+  awaiting?: RunState['awaiting']
   waitingFor?: RunState['waitingFor']
   pendingApproval?: RunState['pendingApproval']
   wakeAt?: number
@@ -389,8 +392,10 @@ export interface WorkflowRuntimeStartRunArgs {
 export interface WorkflowRuntimeDeliverSignalArgs<TPayload = unknown> {
   runId: RunId
   signalId: string
+  stepId?: string
   name: string
   payload: TPayload
+  meta?: Record<string, unknown>
   now?: number
   leaseOwner?: LeaseOwner
   leaseMs?: number

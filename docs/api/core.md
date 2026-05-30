@@ -62,6 +62,7 @@ const now = await ctx.now()
 const payment = await ctx.waitForEvent<{ paymentId: string }>(
   'payment-received',
   {
+    id: 'payment-webhook',
     deadline: now + 24 * 60 * 60_000,
     meta: { orderId: ctx.input.orderId },
   },
@@ -77,6 +78,7 @@ Pauses until an approval is delivered.
 
 ```ts
 const decision = await ctx.approve({
+  id: 'refund-approval',
   title: 'Approve refund?',
   description: `Refund ${ctx.input.amount}`,
 })
@@ -91,7 +93,7 @@ Pauses until a timer deadline.
 ```ts
 await ctx.sleep(30_000)
 const now = await ctx.now()
-await ctx.sleepUntil(now + 30_000)
+await ctx.sleepUntil(now + 30_000, { id: 'cooldown' })
 ```
 
 In the runtime package, due timers are resumed by `runtime.sweep()`.
@@ -101,12 +103,16 @@ In the runtime package, due timers are resumed by `runtime.sweep()`.
 Records deterministic values.
 
 ```ts
-const now = await ctx.now()
-const id = await ctx.uuid()
+const now = await ctx.now({ id: 'started-at' })
+const id = await ctx.uuid({ id: 'correlation-id' })
 ```
 
 Use these instead of `Date.now()` and `crypto.randomUUID()` when the value
 affects workflow control flow or output.
+
+For `sleep`, `sleepUntil`, `waitForEvent`, `approve`, `now`, and `uuid`, the
+optional `id` is the stable durable-operation ID used for replay. If omitted,
+the engine generates a positional internal ID.
 
 ## `runWorkflow`
 

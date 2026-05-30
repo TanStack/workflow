@@ -31,6 +31,7 @@ type WorkflowEvent =
 }
   | {
   audience?: string;
+  meta?: WorkflowMetadata;
   stepId: string;
   ts: number;
   type: "STEP_STARTED";
@@ -38,6 +39,7 @@ type WorkflowEvent =
   | {
   attempts?: ReadonlyArray<StepAttempt>;
   audience?: string;
+  meta?: WorkflowMetadata;
   result: unknown;
   stepId: string;
   ts: number;
@@ -47,6 +49,7 @@ type WorkflowEvent =
   attempts?: ReadonlyArray<StepAttempt>;
   audience?: string;
   error: SerializedError;
+  meta?: WorkflowMetadata;
   stepId: string;
   ts: number;
   type: "STEP_FAILED";
@@ -62,6 +65,7 @@ type WorkflowEvent =
 }
   | {
   audience?: string;
+  meta?: WorkflowMetadata;
   name: string;
   payload: unknown;
   signalId?: string;
@@ -73,6 +77,7 @@ type WorkflowEvent =
   approvalId: string;
   audience?: string;
   description?: string;
+  meta?: WorkflowMetadata;
   stepId: string;
   title: string;
   ts: number;
@@ -83,12 +88,14 @@ type WorkflowEvent =
   approved: boolean;
   audience?: string;
   feedback?: string;
+  meta?: WorkflowMetadata;
   stepId: string;
   ts: number;
   type: "APPROVAL_RESOLVED";
 }
   | {
   audience?: string;
+  meta?: WorkflowMetadata;
   stepId: string;
   ts: number;
   type: "NOW_RECORDED";
@@ -96,6 +103,7 @@ type WorkflowEvent =
 }
   | {
   audience?: string;
+  meta?: WorkflowMetadata;
   stepId: string;
   ts: number;
   type: "UUID_RECORDED";
@@ -116,7 +124,7 @@ type WorkflowEvent =
 };
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:57](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L57)
+Defined in: [packages/workflow-core/src/types.ts:70](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L70)
 
 The shape of every event the engine appends to a run's log.
 
@@ -280,6 +288,7 @@ type: "RUN_ERRORED";
 ```ts
 {
   audience?: string;
+  meta?: WorkflowMetadata;
   stepId: string;
   ts: number;
   type: "STEP_STARTED";
@@ -290,6 +299,12 @@ type: "RUN_ERRORED";
 
 ```ts
 optional audience: string;
+```
+
+### meta?
+
+```ts
+optional meta: WorkflowMetadata;
 ```
 
 ### stepId
@@ -314,6 +329,7 @@ type: "STEP_STARTED";
 {
   attempts?: ReadonlyArray<StepAttempt>;
   audience?: string;
+  meta?: WorkflowMetadata;
   result: unknown;
   stepId: string;
   ts: number;
@@ -331,6 +347,12 @@ optional attempts: ReadonlyArray<StepAttempt>;
 
 ```ts
 optional audience: string;
+```
+
+### meta?
+
+```ts
+optional meta: WorkflowMetadata;
 ```
 
 ### result
@@ -362,6 +384,7 @@ type: "STEP_FINISHED";
   attempts?: ReadonlyArray<StepAttempt>;
   audience?: string;
   error: SerializedError;
+  meta?: WorkflowMetadata;
   stepId: string;
   ts: number;
   type: "STEP_FAILED";
@@ -384,6 +407,12 @@ optional audience: string;
 
 ```ts
 error: SerializedError;
+```
+
+### meta?
+
+```ts
+optional meta: WorkflowMetadata;
 ```
 
 ### stepId
@@ -461,6 +490,7 @@ type: "SIGNAL_AWAITED";
 ```ts
 {
   audience?: string;
+  meta?: WorkflowMetadata;
   name: string;
   payload: unknown;
   signalId?: string;
@@ -474,6 +504,12 @@ type: "SIGNAL_AWAITED";
 
 ```ts
 optional audience: string;
+```
+
+### meta?
+
+```ts
+optional meta: WorkflowMetadata;
 ```
 
 ### name
@@ -521,6 +557,7 @@ type: "SIGNAL_RESOLVED";
   approvalId: string;
   audience?: string;
   description?: string;
+  meta?: WorkflowMetadata;
   stepId: string;
   title: string;
   ts: number;
@@ -544,6 +581,12 @@ optional audience: string;
 
 ```ts
 optional description: string;
+```
+
+### meta?
+
+```ts
+optional meta: WorkflowMetadata;
 ```
 
 ### stepId
@@ -576,6 +619,7 @@ type: "APPROVAL_REQUESTED";
   approved: boolean;
   audience?: string;
   feedback?: string;
+  meta?: WorkflowMetadata;
   stepId: string;
   ts: number;
   type: "APPROVAL_RESOLVED";
@@ -606,6 +650,12 @@ optional audience: string;
 optional feedback: string;
 ```
 
+### meta?
+
+```ts
+optional meta: WorkflowMetadata;
+```
+
 ### stepId
 
 ```ts
@@ -627,6 +677,7 @@ type: "APPROVAL_RESOLVED";
 ```ts
 {
   audience?: string;
+  meta?: WorkflowMetadata;
   stepId: string;
   ts: number;
   type: "NOW_RECORDED";
@@ -638,6 +689,12 @@ type: "APPROVAL_RESOLVED";
 
 ```ts
 optional audience: string;
+```
+
+### meta?
+
+```ts
+optional meta: WorkflowMetadata;
 ```
 
 ### stepId
@@ -667,6 +724,7 @@ value: number;
 ```ts
 {
   audience?: string;
+  meta?: WorkflowMetadata;
   stepId: string;
   ts: number;
   type: "UUID_RECORDED";
@@ -678,6 +736,12 @@ value: number;
 
 ```ts
 optional audience: string;
+```
+
+### meta?
+
+```ts
+optional meta: WorkflowMetadata;
 ```
 
 ### stepId

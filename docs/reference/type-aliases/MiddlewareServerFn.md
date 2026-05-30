@@ -9,7 +9,7 @@ title: MiddlewareServerFn
 type MiddlewareServerFn<TCtxIn, TExtension> = (args) => Promise<unknown>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:369](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L369)
+Defined in: [packages/workflow-core/src/types.ts:399](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L399)
 
 A middleware extends the ctx for downstream middleware + the
 handler. The function receives the *current* `ctx` and a `next`

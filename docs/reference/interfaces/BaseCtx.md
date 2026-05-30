@@ -5,7 +5,7 @@ title: BaseCtx
 
 # Interface: BaseCtx\<TInput, TState\>
 
-Defined in: [packages/workflow-core/src/types.ts:271](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L271)
+Defined in: [packages/workflow-core/src/types.ts:301](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L301)
 
 Built-in fields on every ctx. Middleware can add fields via the
  `TExtensions` generic but cannot shadow these.
@@ -28,7 +28,7 @@ Built-in fields on every ctx. Middleware can add fields via the
 approve: (options) => Promise<ApprovalResult>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:290](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L290)
+Defined in: [packages/workflow-core/src/types.ts:320](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L320)
 
 #### Parameters
 
@@ -48,7 +48,7 @@ Defined in: [packages/workflow-core/src/types.ts:290](https://github.com/TanStac
 emit: (name, value) => void;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:297](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L297)
+Defined in: [packages/workflow-core/src/types.ts:327](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L327)
 
 Emit a CUSTOM event for UI/devtools consumption. Does not enter
  the replay log.
@@ -75,17 +75,23 @@ Emit a CUSTOM event for UI/devtools consumption. Does not enter
 input: TInput;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:273](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L273)
+Defined in: [packages/workflow-core/src/types.ts:303](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L303)
 
 ***
 
 ### now()
 
 ```ts
-now: () => Promise<number>;
+now: (options?) => Promise<number>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:291](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L291)
+Defined in: [packages/workflow-core/src/types.ts:321](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L321)
+
+#### Parameters
+
+##### options?
+
+[`DeterministicValueOptions`](DeterministicValueOptions.md)
 
 #### Returns
 
@@ -99,7 +105,7 @@ Defined in: [packages/workflow-core/src/types.ts:291](https://github.com/TanStac
 runId: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:272](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L272)
+Defined in: [packages/workflow-core/src/types.ts:302](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L302)
 
 ***
 
@@ -109,7 +115,7 @@ Defined in: [packages/workflow-core/src/types.ts:272](https://github.com/TanStac
 signal: AbortSignal;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:276](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L276)
+Defined in: [packages/workflow-core/src/types.ts:306](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L306)
 
 AbortSignal for the run as a whole.
 
@@ -118,16 +124,20 @@ AbortSignal for the run as a whole.
 ### sleep()
 
 ```ts
-sleep: (ms) => Promise<void>;
+sleep: (ms, options?) => Promise<void>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:284](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L284)
+Defined in: [packages/workflow-core/src/types.ts:314](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L314)
 
 #### Parameters
 
 ##### ms
 
 `number`
+
+##### options?
+
+[`SleepOptions`](SleepOptions.md)
 
 #### Returns
 
@@ -138,16 +148,20 @@ Defined in: [packages/workflow-core/src/types.ts:284](https://github.com/TanStac
 ### sleepUntil()
 
 ```ts
-sleepUntil: (timestamp) => Promise<void>;
+sleepUntil: (timestamp, options?) => Promise<void>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:285](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L285)
+Defined in: [packages/workflow-core/src/types.ts:315](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L315)
 
 #### Parameters
 
 ##### timestamp
 
 `number`
+
+##### options?
+
+[`SleepOptions`](SleepOptions.md)
 
 #### Returns
 
@@ -161,7 +175,7 @@ Defined in: [packages/workflow-core/src/types.ts:285](https://github.com/TanStac
 state: TState;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:274](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L274)
+Defined in: [packages/workflow-core/src/types.ts:304](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L304)
 
 ***
 
@@ -171,7 +185,7 @@ Defined in: [packages/workflow-core/src/types.ts:274](https://github.com/TanStac
 step: <T>(id, fn, options?) => Promise<T>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:279](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L279)
+Defined in: [packages/workflow-core/src/types.ts:309](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L309)
 
 #### Type Parameters
 
@@ -202,10 +216,16 @@ Defined in: [packages/workflow-core/src/types.ts:279](https://github.com/TanStac
 ### uuid()
 
 ```ts
-uuid: () => Promise<string>;
+uuid: (options?) => Promise<string>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:292](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L292)
+Defined in: [packages/workflow-core/src/types.ts:322](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L322)
+
+#### Parameters
+
+##### options?
+
+[`DeterministicValueOptions`](DeterministicValueOptions.md)
 
 #### Returns
 
@@ -219,7 +239,7 @@ Defined in: [packages/workflow-core/src/types.ts:292](https://github.com/TanStac
 waitForEvent: <TPayload>(name, options?) => Promise<TPayload>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:286](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L286)
+Defined in: [packages/workflow-core/src/types.ts:316](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L316)
 
 #### Type Parameters
 

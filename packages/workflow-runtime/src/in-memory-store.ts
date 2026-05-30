@@ -246,6 +246,7 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
       updateRun(args.runId, (run) => ({
         ...run,
         status: 'paused',
+        awaiting: args.awaiting,
         waitingFor: args.waitingFor,
         pendingApproval: args.pendingApproval,
         wakeAt: args.wakeAt,
@@ -259,6 +260,7 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
         ...run,
         status: 'finished',
         output: args.output,
+        awaiting: undefined,
         waitingFor: undefined,
         pendingApproval: undefined,
         wakeAt: undefined,
@@ -273,6 +275,7 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
         ...run,
         status: 'errored',
         error: args.error,
+        awaiting: undefined,
         waitingFor: undefined,
         pendingApproval: undefined,
         wakeAt: undefined,
@@ -320,7 +323,7 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
 
       const key = signalKey(args.runId, args.delivery.signalId)
       if (signalDeliveries.has(key)) return { kind: 'duplicate', run }
-      if (run.waitingFor?.signalName !== args.delivery.name) {
+      if (!isRunWaitingForSignal(run, args.delivery)) {
         return { kind: 'not-waiting', run }
       }
 
@@ -329,6 +332,7 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
       const updated = updateRun(args.runId, (current) => ({
         ...current,
         status: 'queued',
+        awaiting: undefined,
         waitingFor: undefined,
         pendingApproval: undefined,
         wakeAt: undefined,
@@ -345,7 +349,7 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
 
       const key = signalKey(args.runId, `approval:${args.approval.approvalId}`)
       if (signalDeliveries.has(key)) return { kind: 'duplicate', run }
-      if (run.pendingApproval?.approvalId !== args.approval.approvalId) {
+      if (!isRunWaitingForApproval(run, args.approval)) {
         return { kind: 'not-waiting', run }
       }
 
@@ -353,6 +357,7 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
       const updated = updateRun(args.runId, (current) => ({
         ...current,
         status: 'queued',
+        awaiting: undefined,
         waitingFor: undefined,
         pendingApproval: undefined,
         wakeAt: undefined,
@@ -469,6 +474,7 @@ function executionFromRunState(
     input: state.input,
     output: state.output,
     error: state.error,
+    awaiting: state.awaiting,
     waitingFor: state.waitingFor,
     pendingApproval: state.pendingApproval,
     wakeAt:
@@ -516,6 +522,54 @@ function isTerminal(status: WorkflowExecution['status']) {
   return status === 'finished' || status === 'errored' || status === 'aborted'
 }
 
+function isRunWaitingForSignal(
+  run: WorkflowExecution,
+  delivery: DeliverSignalArgs['delivery'],
+) {
+  return (
+    signalAwaitableMatches(run.waitingFor, delivery) ||
+    run.awaiting?.some(
+      (awaitable) =>
+        awaitable.type === 'signal' &&
+        signalAwaitableMatches(awaitable, delivery),
+    ) === true
+  )
+}
+
+function signalAwaitableMatches(
+  awaitable:
+    | NonNullable<WorkflowExecution['waitingFor']>
+    | Extract<
+        NonNullable<WorkflowExecution['awaiting']>[number],
+        {
+          type: 'signal'
+        }
+      >
+    | undefined,
+  delivery: DeliverSignalArgs['delivery'],
+) {
+  return (
+    awaitable?.signalName === delivery.name &&
+    (delivery.stepId === undefined ||
+      awaitable.stepId === undefined ||
+      awaitable.stepId === delivery.stepId)
+  )
+}
+
+function isRunWaitingForApproval(
+  run: WorkflowExecution,
+  approval: DeliverApprovalArgs['approval'],
+) {
+  return (
+    run.pendingApproval?.approvalId === approval.approvalId ||
+    run.awaiting?.some(
+      (awaitable) =>
+        awaitable.type === 'approval' &&
+        awaitable.approvalId === approval.approvalId,
+    ) === true
+  )
+}
+
 function timerKey(runId: RunId, signalId: string) {
   return `${runId}:${signalId}`
 }
@@ -551,6 +605,7 @@ function toRunSummary(run: WorkflowExecution): RunSummary {
     workflowId: run.workflowId,
     workflowVersion: run.workflowVersion,
     status: run.status,
+    awaiting: run.awaiting,
     waitingFor: run.waitingFor,
     pendingApproval: run.pendingApproval,
     wakeAt: run.wakeAt,
@@ -562,11 +617,12 @@ function toRunSummary(run: WorkflowExecution): RunSummary {
 function cloneRun(run: WorkflowExecution): WorkflowExecution {
   return {
     ...run,
+    awaiting: cloneAwaiting(run.awaiting),
     waitingFor: run.waitingFor
       ? { ...run.waitingFor, meta: cloneRecord(run.waitingFor.meta) }
       : undefined,
     pendingApproval: run.pendingApproval
-      ? { ...run.pendingApproval }
+      ? { ...run.pendingApproval, meta: cloneRecord(run.pendingApproval.meta) }
       : undefined,
     lease: run.lease ? cloneLease(run.lease) : undefined,
   }
@@ -575,11 +631,15 @@ function cloneRun(run: WorkflowExecution): WorkflowExecution {
 function cloneRunState(state: RunState): RunState {
   return {
     ...state,
+    awaiting: cloneAwaiting(state.awaiting),
     waitingFor: state.waitingFor
       ? { ...state.waitingFor, meta: cloneRecord(state.waitingFor.meta) }
       : undefined,
     pendingApproval: state.pendingApproval
-      ? { ...state.pendingApproval }
+      ? {
+          ...state.pendingApproval,
+          meta: cloneRecord(state.pendingApproval.meta),
+        }
       : undefined,
   }
 }
@@ -604,4 +664,11 @@ function cloneLease(leaseValue: WorkflowLease): WorkflowLease {
 
 function cloneRecord(value: Record<string, unknown> | undefined) {
   return value ? { ...value } : value
+}
+
+function cloneAwaiting(value: RunState['awaiting']) {
+  return value?.map((awaitable) => ({
+    ...awaitable,
+    meta: cloneRecord(awaitable.meta),
+  }))
 }

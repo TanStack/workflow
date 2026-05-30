@@ -35,20 +35,26 @@ for await (const event of runWorkflow({
 
 ## What you get on `ctx`
 
-| Field                                  | Type                       | Purpose                                                       |
-| -------------------------------------- | -------------------------- | ------------------------------------------------------------- |
-| `ctx.input`                            | typed from `input` schema  | request payload                                               |
-| `ctx.state`                            | typed from `state` schema  | mutable; tracked between primitives, emitted as `STATE_DELTA` |
-| `ctx.runId`                            | `string`                   | stable identifier; safe as an idempotency key                 |
-| `ctx.signal`                           | `AbortSignal`              | run-level cancellation                                        |
-| `ctx.step(id, fn, opts?)`              | `Promise<T>`               | durable side-effect with replay                               |
-| `ctx.sleep(ms)` / `ctx.sleepUntil(ts)` | `Promise<void>`            | durable pause via `__timer` signal                            |
-| `ctx.waitForEvent(name, opts?)`        | `Promise<TPayload>`        | pause until host delivers a signal                            |
-| `ctx.approve({ title, description? })` | `Promise<ApprovalResult>`  | pause for human approval                                      |
-| `ctx.now()` / `ctx.uuid()`             | `Promise<number / string>` | deterministic recorded values                                 |
-| `ctx.emit(name, value)`                | `void`                     | observability-only custom event                               |
+| Field                                                | Type                       | Purpose                                                       |
+| ---------------------------------------------------- | -------------------------- | ------------------------------------------------------------- |
+| `ctx.input`                                          | typed from `input` schema  | request payload                                               |
+| `ctx.state`                                          | typed from `state` schema  | mutable; tracked between primitives, emitted as `STATE_DELTA` |
+| `ctx.runId`                                          | `string`                   | stable identifier; safe as an idempotency key                 |
+| `ctx.signal`                                         | `AbortSignal`              | run-level cancellation                                        |
+| `ctx.step(id, fn, opts?)`                            | `Promise<T>`               | durable side-effect with replay                               |
+| `ctx.sleep(ms, opts?)` / `ctx.sleepUntil(ts, opts?)` | `Promise<void>`            | durable pause via `__timer` signal                            |
+| `ctx.waitForEvent(name, opts?)`                      | `Promise<TPayload>`        | pause until host delivers a signal                            |
+| `ctx.approve({ id?, title, description? })`          | `Promise<ApprovalResult>`  | pause for human approval                                      |
+| `ctx.now(opts?)` / `ctx.uuid(opts?)`                 | `Promise<number / string>` | deterministic recorded values                                 |
+| `ctx.emit(name, value)`                              | `void`                     | observability-only custom event                               |
 
 Middleware can add more.
+
+For every durable primitive except `ctx.step(id, ...)`, pass `id` in the
+options object when you want replay to survive later reordering:
+`ctx.waitForEvent('payment', { id: 'payment-webhook' })`,
+`ctx.approve({ id: 'legal-review', title: 'Ship?' })`,
+`ctx.now({ id: 'started-at' })`.
 
 ## Pause and resume
 
