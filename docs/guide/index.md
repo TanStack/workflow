@@ -31,10 +31,11 @@ This guide walks through the production shape:
 | `@tanstack/workflow-core` | The replay engine, workflow builder, primitives, middleware, version routing, and low-level `RunStore`. |
 | `@tanstack/workflow-runtime` | The deployment-independent runtime, execution store contract, schedules, timers, leases, and sweep driver. |
 | `@tanstack/workflow-store-drizzle-postgres` | A Postgres implementation of the runtime execution store contract using Drizzle as the SQL surface. |
-| `@tanstack/workflow-cloudflare` | A Cloudflare Worker `scheduled()` handler and Wrangler cron config helper that call `runtime.sweep()`. |
+| `@tanstack/workflow-store-cloudflare-d1` | A Cloudflare D1 implementation of the runtime execution store contract. |
+| `@tanstack/workflow-cloudflare` | A Cloudflare Worker `scheduled()` handler that calls `runtime.sweep()`. |
 | `@tanstack/workflow-railway` | A Railway Cron Job command helper that calls `runtime.sweep()` and exits. |
-| `@tanstack/workflow-netlify` | A Netlify Scheduled Function handler and config helper that call `runtime.sweep()`. |
-| `@tanstack/workflow-vercel` | A Vercel route handler and cron config helper that call `runtime.sweep()`. |
+| `@tanstack/workflow-netlify` | A Netlify Scheduled Function handler that calls `runtime.sweep()`. |
+| `@tanstack/workflow-vercel` | A Vercel route handler that calls `runtime.sweep()`. |
 
 The important boundary is this:
 
@@ -172,8 +173,13 @@ import { createDrizzlePostgresWorkflowStore } from '@tanstack/workflow-store-dri
 
 const db = drizzle(new Pool({ connectionString: process.env.DATABASE_URL }))
 const store = createDrizzlePostgresWorkflowStore({ db })
+```
 
-await store.ensureSchema()
+Apply the package-owned Workflow store migration before runtime sweeps or
+requests hit that database:
+
+```bash
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
 ```
 
 Then pass `store` to `defineWorkflowRuntime`. The runtime will use it for:
@@ -340,6 +346,8 @@ export const config = {
 ```
 
 The Scheduled Function only wakes the runtime. It does not store workflow state.
+Apply the package-owned store migration during deploy/setup; do not mirror
+Workflow's `workflow_*` tables in app schema files.
 
 ## Deploy on Vercel
 
@@ -375,6 +383,9 @@ Configure Vercel Cron:
 ```
 
 The Vercel Cron Job wakes the route. The database decides what is actually due.
+Apply the package-owned store migration during deploy/setup; app code owns the
+workflow definitions and route config, while Workflow owns its persistence
+schema.
 
 ## Why this works on serverless hosts
 

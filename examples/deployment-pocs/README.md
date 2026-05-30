@@ -100,6 +100,7 @@ curl "$BASE_URL/cron/digest"
 ## Destinations
 
 - [Cloudflare](./cloudflare/README.md): Worker fetch handler plus Cron Triggers.
+- [Cloudflare D1](./cloudflare-d1/README.md): Worker runtime plus D1 durable store.
 - [Netlify](./netlify/README.md): Netlify Functions plus Scheduled Functions.
 - [Vercel](./vercel/README.md): Next route handlers plus Vercel Cron.
 

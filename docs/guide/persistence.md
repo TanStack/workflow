@@ -165,14 +165,22 @@ const store = createDrizzlePostgresWorkflowStore({
   db,
   schema: 'public',
 })
-
-await store.ensureSchema()
 ```
 
-`ensureSchema()` is useful for local demos, tests, and explicit bootstrap
-scripts. Runtime sweeps and host adapters do not call it for you. A missing table
-during `runtime.sweep()` means the deployed database has not been migrated yet,
-not that the host adapter failed.
+Apply the package-owned migration during setup/deploy:
+
+```bash
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+```
+
+Workflow owns the `workflow_*` table definitions, indexes, leases, timers,
+schedules, and compatibility expectations. Apps should not copy those tables
+into their own Drizzle schema for normal runtime use.
+
+`ensureSchema()` is still useful for local demos, tests, and explicit admin
+bootstrap scripts. Runtime sweeps and host adapters do not call it for you. A
+missing table during `runtime.sweep()` means the deployed database has not been
+migrated yet, not that the host adapter failed.
 
 You can override table names:
 
@@ -188,6 +196,16 @@ const store = createDrizzlePostgresWorkflowStore({
 
 The default tables include runs, run states, event locks, events, timers, signal
 deliveries, schedules, and schedule buckets.
+
+Future schema changes are versioned with
+`@tanstack/workflow-store-drizzle-postgres`. Apply new package migrations as part
+of upgrading the store package. The runtime assumes the database schema is
+compatible with the installed store adapter version.
+
+The first migration also creates `workflow_schema_migrations` and records the
+applied migration ID. Future store migrations will be published as additional
+numbered SQL files and should be applied in order before the new adapter version
+handles production traffic.
 
 ## Retention
 

@@ -62,29 +62,39 @@ not create tables during a cron tick, scheduled function, or worker alarm. That
 keeps production behavior explicit: migrations and bootstrap steps belong to the
 app deploy/admin process, not the background sweep path.
 
-For the Drizzle/Postgres adapter, create an app-owned script:
+For the Drizzle/Postgres adapter, Workflow owns the `workflow_*` schema. Apply
+the package-owned migration against the same database your deployed functions
+use:
 
-```ts
-// scripts/workflow-ensure-schema.ts
-import { workflowStore } from '../src/workflows/store.server'
-
-await workflowStore.ensureSchema()
+```bash
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
 ```
 
-Wire it into your app scripts:
+For Cloudflare D1, use the D1-compatible package-owned migration artifact:
+
+```txt
+node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0000_workflow_store.sql
+```
+
+Wire it into your app scripts if your deploy provider runs package scripts:
 
 ```json
 {
   "scripts": {
-    "workflow:ensure-schema": "tsx scripts/workflow-ensure-schema.ts",
+    "workflow:migrate": "psql \"$DATABASE_URL\" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql",
     "workflow:sweep": "tsx scripts/workflow-sweep.ts"
   }
 }
 ```
 
-Run `pnpm workflow:ensure-schema` against the same `DATABASE_URL` your deployed
-functions use. In production, you can also apply equivalent SQL through your
-normal migration system.
+Do not copy Workflow's internal table declarations into your app Drizzle schema.
+Keep app code focused on workflow definitions and host entrypoints. Keep
+`store.ensureSchema()` for tests, local demos, and explicit admin bootstrap
+scripts.
+
+The migration creates `workflow_schema_migrations` so future store schema changes
+can be tracked as package-owned numbered migrations. Apply new store migrations
+before rolling out a store adapter version that expects them.
 
 ## Cloudflare
 
@@ -229,6 +239,8 @@ event arrays.
   "Run now" action to test the path before publishing.
 - Use a durable external store such as Postgres, Netlify Database, Neon, or
   another store adapter.
+- Apply the store adapter's package-owned migration during deploy/setup. The
+  scheduled function should only own host config and the sweep handler.
 - Keep `maxDurationMs` below the function timeout.
 
 ## Vercel
@@ -288,6 +300,8 @@ The adapter validates that header when you pass `cronSecret`.
   sweeps, use a plan that supports the cadence or call the sweep through another
   scheduler.
 - Use a durable external store such as Postgres. Function memory is not a store.
+- Apply the store adapter's package-owned migration during deploy/setup. The
+  route should only own host config and the sweep handler.
 
 ## Choosing a sweep cadence
 

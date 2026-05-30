@@ -167,6 +167,11 @@ export const config = {
 }
 ```
 
+The Netlify adapter only wakes the runtime. Apply the store adapter's
+package-owned migration during deploy/setup; do not define Workflow's
+`workflow_*` tables in application schema files unless you are intentionally
+building typed admin access.
+
 ## Vercel
 
 Install:
@@ -216,6 +221,10 @@ Configure Vercel Cron directly in `vercel.json`:
   "crons": [{ "path": "/api/workflow/sweep", "schedule": "*/5 * * * *" }]
 }
 ```
+
+The Vercel adapter only wakes the runtime. Apply the store adapter's
+package-owned migration during deploy/setup; route code owns host config, while
+Workflow owns the runtime persistence schema.
 
 ## Response shape
 

@@ -1,7 +1,13 @@
 import { LogConflictError } from '@tanstack/workflow-core'
 import { sql } from 'drizzle-orm'
+import {
+  getDrizzlePostgresWorkflowStoreSchemaStatements,
+  qualifiedTableName,
+  resolveDrizzlePostgresWorkflowStoreTables,
+} from './schema-contract'
 import type { RunState, WorkflowEvent } from '@tanstack/workflow-core'
 import type { SQL } from 'drizzle-orm'
+import type { DrizzlePostgresWorkflowStoreTables } from './schema-contract'
 import type {
   AppendEventsArgs,
   AppendEventsResult,
@@ -50,17 +56,6 @@ export interface DrizzlePostgresDatabase {
   ) => Promise<TResult>
 }
 
-export interface DrizzlePostgresWorkflowStoreTables {
-  runs: string
-  runStates: string
-  eventLocks: string
-  events: string
-  timers: string
-  signalDeliveries: string
-  schedules: string
-  scheduleBuckets: string
-}
-
 export interface DrizzlePostgresWorkflowStoreOptions {
   db: DrizzlePostgresDatabase
   schema?: string
@@ -72,31 +67,19 @@ export type DrizzlePostgresWorkflowStore = WorkflowExecutionStore &
     ensureSchema: () => Promise<void>
   }
 
-export const defaultDrizzlePostgresWorkflowStoreTables: DrizzlePostgresWorkflowStoreTables =
-  {
-    runs: 'workflow_runs',
-    runStates: 'workflow_run_states',
-    eventLocks: 'workflow_event_locks',
-    events: 'workflow_events',
-    timers: 'workflow_timers',
-    signalDeliveries: 'workflow_signal_deliveries',
-    schedules: 'workflow_schedules',
-    scheduleBuckets: 'workflow_schedule_buckets',
-  }
-
 export function createDrizzlePostgresWorkflowStore(
   options: DrizzlePostgresWorkflowStoreOptions,
 ): DrizzlePostgresWorkflowStore {
-  const tableNames = {
-    ...defaultDrizzlePostgresWorkflowStoreTables,
-    ...options.tables,
-  }
+  const tableNames = resolveDrizzlePostgresWorkflowStoreTables(options.tables)
   const tableSql = tableSqls(options.schema, tableNames)
   const db = options.db
 
   return {
     async ensureSchema() {
-      for (const statement of schemaStatements(options.schema, tableNames)) {
+      for (const statement of getDrizzlePostgresWorkflowStoreSchemaStatements({
+        schema: options.schema,
+        tables: tableNames,
+      })) {
         await db.execute(sql.raw(statement))
       }
     },
@@ -917,126 +900,6 @@ function tableSqls(
   }
 }
 
-function schemaStatements(
-  schema: string | undefined,
-  tables: DrizzlePostgresWorkflowStoreTables,
-): Array<string> {
-  const runs = qualifiedTableName(schema, tables.runs)
-  const runStates = qualifiedTableName(schema, tables.runStates)
-  const eventLocks = qualifiedTableName(schema, tables.eventLocks)
-  const events = qualifiedTableName(schema, tables.events)
-  const timers = qualifiedTableName(schema, tables.timers)
-  const signalDeliveries = qualifiedTableName(schema, tables.signalDeliveries)
-  const schedules = qualifiedTableName(schema, tables.schedules)
-  const scheduleBuckets = qualifiedTableName(schema, tables.scheduleBuckets)
-
-  return [
-    ...(schema ? [`create schema if not exists ${quoteIdent(schema)}`] : []),
-    `create table if not exists ${runs} (
-      run_id text primary key,
-      workflow_id text not null,
-      workflow_version text,
-      status text not null,
-      input jsonb not null,
-      output jsonb,
-      error jsonb,
-      awaiting jsonb,
-      waiting_for jsonb,
-      pending_approval jsonb,
-      wake_at bigint,
-      lease_owner text,
-      lease_expires_at bigint,
-      created_at bigint not null,
-      updated_at bigint not null
-    )`,
-    `alter table ${runs} add column if not exists awaiting jsonb`,
-    `create index if not exists ${quoteIdent(`${tables.runs}_status_idx`)}
-      on ${runs} (status, updated_at)`,
-    `create index if not exists ${quoteIdent(`${tables.runs}_lease_idx`)}
-      on ${runs} (status, lease_expires_at)`,
-    `create table if not exists ${runStates} (
-      run_id text primary key,
-      workflow_id text not null,
-      workflow_version text,
-      status text not null,
-      input jsonb not null,
-      output jsonb,
-      error jsonb,
-      awaiting jsonb,
-      waiting_for jsonb,
-      pending_approval jsonb,
-      created_at bigint not null,
-      updated_at bigint not null
-    )`,
-    `alter table ${runStates} add column if not exists awaiting jsonb`,
-    `create table if not exists ${eventLocks} (
-      run_id text primary key,
-      created_at bigint not null
-    )`,
-    `create table if not exists ${events} (
-      run_id text not null,
-      event_index integer not null,
-      event_type text not null,
-      step_id text,
-      event jsonb not null,
-      created_at bigint not null,
-      primary key (run_id, event_index)
-    )`,
-    `create index if not exists ${quoteIdent(`${tables.events}_type_idx`)}
-      on ${events} (run_id, event_type)`,
-    `create table if not exists ${timers} (
-      run_id text not null,
-      signal_id text not null,
-      workflow_id text not null,
-      workflow_version text,
-      wake_at bigint not null,
-      lease_owner text,
-      lease_expires_at bigint,
-      primary key (run_id, signal_id)
-    )`,
-    `create index if not exists ${quoteIdent(`${tables.timers}_due_idx`)}
-      on ${timers} (wake_at, lease_expires_at)`,
-    `create table if not exists ${signalDeliveries} (
-      run_id text not null,
-      signal_id text not null,
-      created_at bigint not null,
-      primary key (run_id, signal_id)
-    )`,
-    `create table if not exists ${schedules} (
-      schedule_id text primary key,
-      workflow_id text not null,
-      workflow_version text,
-      schedule jsonb not null,
-      overlap_policy text not null,
-      input jsonb,
-      next_fire_at bigint,
-      enabled boolean not null,
-      updated_at bigint not null
-    )`,
-    `create index if not exists ${quoteIdent(`${tables.schedules}_due_idx`)}
-      on ${schedules} (enabled, next_fire_at)`,
-    `create table if not exists ${scheduleBuckets} (
-      schedule_id text not null,
-      bucket_id text not null,
-      workflow_id text not null,
-      workflow_version text,
-      run_id text not null,
-      fire_at bigint not null,
-      input jsonb,
-      overlap_policy text not null,
-      status text not null,
-      lease_owner text,
-      lease_expires_at bigint,
-      started_at bigint,
-      primary key (schedule_id, bucket_id)
-    )`,
-    `create index if not exists ${quoteIdent(
-      `${tables.scheduleBuckets}_lease_idx`,
-    )}
-      on ${scheduleBuckets} (status, fire_at, lease_expires_at)`,
-  ]
-}
-
 async function loadRunById(
   db: DrizzlePostgresDatabase,
   tables: TableSqls,
@@ -1347,14 +1210,4 @@ function numberOrUndefined(value: number | string | null) {
 
 function getStepId(event: WorkflowEvent) {
   return 'stepId' in event ? event.stepId : undefined
-}
-
-function qualifiedTableName(schema: string | undefined, table: string) {
-  return schema
-    ? `${quoteIdent(schema)}.${quoteIdent(table)}`
-    : quoteIdent(table)
-}
-
-function quoteIdent(identifier: string) {
-  return `"${identifier.replaceAll('"', '""')}"`
 }

@@ -95,27 +95,33 @@ export const workflowRuntime = defineWorkflowRuntime({
 })
 ```
 
-## Create workflow tables
+## Apply workflow store migrations
 
-Use an app-owned bootstrap script for schema setup. Do not create tables from a
-host sweep handler.
+Workflow owns its durable store schema. Apply the package-owned SQL migration
+during setup/deploy instead of copying `workflow_*` tables into your app's
+Drizzle schema.
 
-```ts
-// scripts/workflow-ensure-schema.ts
-import { workflowStore } from '../src/workflows/store.server'
-
-await workflowStore.ensureSchema()
+```bash
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
 ```
+
+If your deploy system wants a package script:
 
 ```json
 {
   "scripts": {
-    "workflow:ensure-schema": "tsx scripts/workflow-ensure-schema.ts"
+    "workflow:migrate": "psql \"$DATABASE_URL\" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql"
   }
 }
 ```
 
-Run this against the same `DATABASE_URL` your deployed functions use.
+Run this against the same `DATABASE_URL` your deployed functions use. Keep
+`store.ensureSchema()` for tests, local demos, and explicit admin bootstrap
+scripts.
+
+The migration records itself in `workflow_schema_migrations`. Future Workflow
+store schema changes will ship as additional numbered SQL files in the adapter
+package.
 
 ## Start a run from HTTP
 

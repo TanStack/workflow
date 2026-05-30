@@ -1,0 +1,24 @@
+{
+  "name": "tanstack-workflow-cloudflare-d1-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "migrate:local": "wrangler d1 migrations apply WORKFLOW_DB --local",
+    "migrate:remote": "wrangler d1 migrations apply WORKFLOW_DB --remote",
+    "test:types": "tsc",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/workflow-cloudflare": "workspace:*",
+    "@tanstack/workflow-core": "workspace:*",
+    "@tanstack/workflow-runtime": "workspace:*",
+    "@tanstack/workflow-store-cloudflare-d1": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "typescript": "6.0.3",
+    "wrangler": "latest"
+  }
+}

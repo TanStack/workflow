@@ -81,6 +81,7 @@
     "@tanstack/workflow-netlify": "workspace:*",
     "@tanstack/workflow-railway": "workspace:*",
     "@tanstack/workflow-runtime": "workspace:*",
+    "@tanstack/workflow-store-cloudflare-d1": "workspace:*",
     "@tanstack/workflow-store-drizzle-postgres": "workspace:*",
     "@tanstack/workflow-vercel": "workspace:*"
   }

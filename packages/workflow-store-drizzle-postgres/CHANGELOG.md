@@ -1,5 +1,11 @@
 # @tanstack/workflow-store-drizzle-postgres
 
+## 0.0.3
+
+### Patch Changes
+
+- Expose the Drizzle/Postgres workflow store schema as a package-owned migration contract, including a published SQL migration artifact, migration helper exports, schema migration tracking, maintainer migration process docs, and optional Drizzle table definitions for typed admin access.
+
 ## 0.0.2
 
 ### Patch Changes

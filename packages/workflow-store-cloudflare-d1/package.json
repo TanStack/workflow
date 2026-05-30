@@ -1,13 +1,13 @@
 {
-  "name": "@tanstack/workflow-store-drizzle-postgres",
-  "version": "0.0.3",
-  "description": "Drizzle/Postgres durable execution store for TanStack Workflow.",
+  "name": "@tanstack/workflow-store-cloudflare-d1",
+  "version": "0.0.2",
+  "description": "Cloudflare D1 durable execution store for TanStack Workflow.",
   "author": "Tanner Linsley",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TanStack/workflow.git",
-    "directory": "packages/workflow-store-drizzle-postgres"
+    "directory": "packages/workflow-store-cloudflare-d1"
   },
   "homepage": "https://tanstack.com/workflow",
   "funding": {
@@ -18,8 +18,9 @@
     "tanstack",
     "workflow",
     "durable-execution",
-    "drizzle",
-    "postgres"
+    "cloudflare",
+    "d1",
+    "sqlite"
   ],
   "scripts": {
     "clean": "premove ./build ./dist",
@@ -54,10 +55,6 @@
   ],
   "dependencies": {
     "@tanstack/workflow-core": "workspace:*",
-    "@tanstack/workflow-runtime": "workspace:*",
-    "drizzle-orm": "^0.45.1"
-  },
-  "devDependencies": {
-    "@electric-sql/pglite": "^0.3.14"
+    "@tanstack/workflow-runtime": "workspace:*"
   }
 }

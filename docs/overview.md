@@ -81,9 +81,9 @@ The production path has three layers:
 - `@tanstack/workflow-core`: the replay engine and workflow authoring API.
 - `@tanstack/workflow-runtime`: registered workflows, execution store contract,
   schedules, timers, signals, approvals, leases, and bounded sweeps.
-- Store and host adapters: Postgres, Cloudflare, Railway, Netlify, Node, Vercel,
-  queues, and
-  other environment-specific capabilities.
+- Store and host adapters: Postgres, Cloudflare D1, Cloudflare Workers,
+  Railway, Netlify, Node, Vercel, queues, and other environment-specific
+  capabilities.
 
 This keeps the engine headless without leaving deployment mechanics as an
 exercise for every user.
@@ -92,7 +92,8 @@ exercise for every user.
 
 `@tanstack/workflow-core` ships the engine and the in-memory `RunStore`.
 `@tanstack/workflow-runtime` is the experimental durable runtime layer.
-`@tanstack/workflow-store-drizzle-postgres`, `@tanstack/workflow-vercel`, and
+`@tanstack/workflow-store-drizzle-postgres`,
+`@tanstack/workflow-store-cloudflare-d1`, `@tanstack/workflow-vercel`, and
 `@tanstack/workflow-netlify` are experimental capability adapters.
 
 Start with the [Guide](guide/index.md) for the full production model.

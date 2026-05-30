@@ -1,0 +1,12 @@
+name = "tanstack-workflow-cloudflare-d1-poc"
+main = "src/worker.ts"
+compatibility_date = "2026-05-30"
+
+[triggers]
+crons = ["* * * * *"]
+
+[[d1_databases]]
+binding = "WORKFLOW_DB"
+database_name = "tanstack-workflow-d1-poc"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
