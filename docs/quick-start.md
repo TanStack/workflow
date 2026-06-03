@@ -122,6 +122,24 @@ const wf = createWorkflow({ id: 'send-receipt' })
 
 Specify the extension type as the generic on `.server<...>` — TS infers everything else.
 
+## Recipe: factory for shared middleware
+
+When several workflows want the same middleware + step-retry defaults, pin them with `createWorkflowFactory`:
+
+```ts
+import { createWorkflowFactory } from '@tanstack/workflow-core'
+
+export const appWorkflow = createWorkflowFactory({
+  defaultStepRetry: { maxAttempts: 3 },
+}).middleware([traced, requireUser])
+
+export const onboard = appWorkflow({ id: 'onboard' })
+  .middleware([requireEmailVerified])     // appended after factory mws
+  .handler(async (ctx) => { /* ctx.trace, ctx.user, ctx.emailVerified */ })
+```
+
+Factory middleware runs before per-workflow middleware. Per-workflow config wins over factory defaults. Use `appWorkflow.extend({ ... })` to fork a child factory with override defaults.
+
 ## Recipe: cross-version resume
 
 ```ts
