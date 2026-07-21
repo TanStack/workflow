@@ -18,6 +18,9 @@ import { defineWorkflowRuntime } from '@tanstack/workflow-runtime'
 const runtime = defineWorkflowRuntime({
   store,
   defaultLeaseMs: 30_000,
+  publish: async (runId, event) => {
+    await eventBus.publish(runId, event)
+  },
   telemetry: {
     spanNamePrefix: 'tanstack.workflow',
   },
@@ -98,6 +101,26 @@ resume it. Existing `sleep`, `waitForEvent`, and `approve` calls already pause.
 
 Step timeouts remain per-attempt limits and do not use the runtime deadline.
 
+## Leases and recovery
+
+The runtime renews an owned run lease every third of `leaseMs` while workflow
+code is running. It stops renewal before releasing the lease on completion,
+pause, yield, or error. `leaseMs` must be a positive finite number.
+
+`runtime.sweep()` also claims expired running executions and replays them from
+their durable checkpoints. Completed steps are not executed again. Fresh steps
+remain at-least-once operations, so external side effects still need
+idempotency keys.
+
+## Live events
+
+Set `publish` on the runtime or an individual runtime call to receive events as
+they are emitted. When both are present, both publishers run. Fan-out is
+best-effort: publisher failures do not change durable execution.
+
+`publish` is independent of `includeEvents`. A host can stream live events while
+setting `includeEvents: false` to avoid retaining them in the final result.
+
 ## `runtime.startRun`
 
 Starts or attaches to a run ID through the runtime store.
@@ -129,6 +152,7 @@ Options:
 | `threadId` | Optional core engine thread ID. |
 | `includeEvents` | Whether to retain emitted events in the result. Defaults to true. |
 | `maxEvents` | Maximum retained events when `includeEvents` is true. |
+| `publish` | Best-effort live event publisher for this drive. |
 
 ## `runtime.deliverSignal`
 
@@ -162,12 +186,13 @@ await runtime.deliverApproval({
 
 ## `runtime.sweep`
 
-Claims due schedules and timers, then drives them to completion or the next
-pause.
+Recovers stale running executions, then claims due schedules and timers and
+drives them to completion or the next pause.
 
 ```ts
 const result = await runtime.sweep({
   now: Date.now(),
+  maxRecoveredRuns: 25,
   maxScheduledRuns: 25,
   maxTimers: 25,
   maxDurationMs: 55_000,
@@ -182,7 +207,8 @@ Options:
 | Option | Purpose |
 | --- | --- |
 | `now` | Current timestamp used for due checks. |
-| `limit` | Backward-compatible shared limit for schedules and timers. |
+| `limit` | Backward-compatible shared limit for recoveries, schedules, and timers. |
+| `maxRecoveredRuns` | Maximum expired running executions to recover. |
 | `maxScheduledRuns` | Maximum due schedule buckets to start. |
 | `maxTimers` | Maximum due timers to resume. |
 | `deadline` | Absolute wall-clock deadline in UTC milliseconds. |
@@ -192,11 +218,13 @@ Options:
 | `leaseMs` | Lease duration. |
 | `includeEvents` | Whether to retain emitted events. Sweeps usually set false. |
 | `maxEvents` | Maximum retained events per run result. |
+| `publish` | Best-effort live event publisher for every driven run. |
 
 Result:
 
 ```ts
 interface WorkflowRuntimeSweepResult {
+  recovered: ReadonlyArray<WorkflowRuntimeRunResult>
   scheduled: ReadonlyArray<WorkflowRuntimeRunResult>
   timers: ReadonlyArray<WorkflowRuntimeRunResult>
   summary: WorkflowRuntimeSweepSummary

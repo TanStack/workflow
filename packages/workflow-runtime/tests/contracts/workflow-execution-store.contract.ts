@@ -139,6 +139,48 @@ export function runWorkflowExecutionStoreContractTests(
       })
     })
 
+    it('extends active run leases with heartbeats', async () => {
+      const store = await options.createStore()
+      await store.createRun({
+        runId: 'run-1',
+        workflowId: 'intent-process',
+        input: {},
+        now: 0,
+      })
+      await store.claimRun({
+        runId: 'run-1',
+        leaseOwner: 'worker-a',
+        leaseMs: 100,
+        now: 0,
+      })
+      await store.heartbeatRunLease({
+        runId: 'run-1',
+        leaseOwner: 'worker-a',
+        leaseMs: 100,
+        now: 50,
+      })
+
+      expect(
+        await store.claimStaleRuns({
+          now: 101,
+          limit: 10,
+          leaseOwner: 'worker-b',
+          leaseMs: 100,
+        }),
+      ).toEqual([])
+
+      const stale = await store.claimStaleRuns({
+        now: 151,
+        limit: 10,
+        leaseOwner: 'worker-b',
+        leaseMs: 100,
+      })
+      expect(stale[0]).toMatchObject({
+        run: { runId: 'run-1' },
+        lease: { owner: 'worker-b', expiresAt: 251 },
+      })
+    })
+
     it('claims due timers once per active lease window', async () => {
       const store = await options.createStore()
       await store.createRun({

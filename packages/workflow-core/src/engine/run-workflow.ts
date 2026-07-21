@@ -35,11 +35,15 @@ export interface RunWorkflowOptions {
   workflow: AnyWorkflowDefinition
   runStore: RunStore
   /** Start: provide `input`. Resume: provide `runId` plus a delivery
-   *  (`signalDelivery` or `approval`). Attach: `runId` + `attach: true`. */
+   *  (`signalDelivery` or `approval`). Recover: `runId` + `recover: true`.
+   *  Attach: `runId` + `attach: true`. */
   input?: unknown
   runId?: string
   signalDelivery?: SignalDelivery
   approval?: ApprovalResult
+  /** Replay an interrupted running execution from durable checkpoints.
+   *  Host runtimes use this after reclaiming an expired run lease. */
+  recover?: boolean
   /** Read-only subscription to an existing run. */
   attach?: boolean
   /** External cancellation. */
@@ -162,13 +166,17 @@ async function drive(options: DriveOptions): Promise<void> {
     await attachRun(options)
     return
   }
+  if (options.runId && options.recover) {
+    await resumeRun(options)
+    return
+  }
   if (options.runId && (options.signalDelivery || options.approval)) {
     await resumeRun(options)
     return
   }
   if (options.input === undefined) {
     throw new Error(
-      'runWorkflow: provide `input` (start), `runId` + `signalDelivery`/`approval` (resume), or `runId` + `attach: true` (attach).',
+      'runWorkflow: provide `input` (start), `runId` + `signalDelivery`/`approval` (resume), `runId` + `recover: true` (recovery), or `runId` + `attach: true` (attach).',
     )
   }
   await startRun(options)

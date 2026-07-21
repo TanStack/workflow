@@ -18,6 +18,11 @@ export type ScheduleId = string
 export type ScheduleBucketId = string
 export type LeaseOwner = string
 
+export type WorkflowRuntimeEventPublisher = (
+  runId: RunId,
+  event: WorkflowEvent,
+) => void | Promise<void>
+
 export type WorkflowExecutionStatus = RunStatus | 'queued'
 
 export interface WorkflowLease {
@@ -358,6 +363,8 @@ export interface WorkflowRuntimeConfig<
   workflows: TWorkflows
   store: WorkflowExecutionStore
   defaultLeaseMs?: number
+  /** Best-effort live event fan-out for every runtime-driven run. */
+  publish?: WorkflowRuntimeEventPublisher
   telemetry?: false | WorkflowTelemetryOptions
 }
 
@@ -392,6 +399,7 @@ export interface WorkflowRuntimeStartRunArgs {
   threadId?: string
   includeEvents?: boolean
   maxEvents?: number
+  publish?: WorkflowRuntimeEventPublisher
 }
 
 export interface WorkflowRuntimeDeliverSignalArgs<TPayload = unknown> {
@@ -410,6 +418,7 @@ export interface WorkflowRuntimeDeliverSignalArgs<TPayload = unknown> {
   threadId?: string
   includeEvents?: boolean
   maxEvents?: number
+  publish?: WorkflowRuntimeEventPublisher
 }
 
 export interface WorkflowRuntimeDeliverApprovalArgs {
@@ -424,6 +433,7 @@ export interface WorkflowRuntimeDeliverApprovalArgs {
   threadId?: string
   includeEvents?: boolean
   maxEvents?: number
+  publish?: WorkflowRuntimeEventPublisher
 }
 
 export type WorkflowRuntimeRunResultKind =
@@ -449,6 +459,7 @@ export interface WorkflowRuntimeRunResult {
 export interface WorkflowRuntimeSweepArgs {
   now?: number
   limit?: number
+  maxRecoveredRuns?: number
   maxScheduledRuns?: number
   maxTimers?: number
   deadline?: number
@@ -458,9 +469,11 @@ export interface WorkflowRuntimeSweepArgs {
   leaseMs?: number
   includeEvents?: boolean
   maxEvents?: number
+  publish?: WorkflowRuntimeEventPublisher
 }
 
 export interface WorkflowRuntimeSweepResult {
+  recovered: ReadonlyArray<WorkflowRuntimeRunResult>
   scheduled: ReadonlyArray<WorkflowRuntimeRunResult>
   timers: ReadonlyArray<WorkflowRuntimeRunResult>
   summary: WorkflowRuntimeSweepSummary
@@ -473,6 +486,7 @@ export type WorkflowRuntimeRunKindCounts = Partial<
 >
 
 export interface WorkflowRuntimeSweepSummary {
+  recovered: WorkflowRuntimeRunKindCounts
   scheduled: WorkflowRuntimeRunKindCounts
   timers: WorkflowRuntimeRunKindCounts
   eventCount: number

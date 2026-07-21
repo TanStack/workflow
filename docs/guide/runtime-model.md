@@ -82,9 +82,9 @@ The runtime depends on `WorkflowExecutionStore`. It is richer than the core
 - stale run recovery
 - list and timeline APIs
 
-The store is the durability boundary. If a function invocation exits, another
-invocation can resume because the store knows the run state, event log, timers,
-and pending waits.
+The store is the durability boundary. If a host execution exits, another drive
+can resume because the store knows the run state, event log, timers, and pending
+waits.
 
 ## Host adapters
 
@@ -123,6 +123,7 @@ A sweep is a bounded unit of background work:
 
 ```ts
 await runtime.sweep({
+  maxRecoveredRuns: 25,
   maxScheduledRuns: 25,
   maxTimers: 25,
   maxDurationMs: 55_000,
@@ -132,11 +133,10 @@ await runtime.sweep({
 
 The runtime:
 
-1. Claims due schedule buckets.
-2. Starts those workflow runs.
-3. Claims due timers.
-4. Delivers `__timer` signals to sleeping runs.
-5. Stops when it reaches count or time budgets.
+1. Claims expired running executions and replays them from checkpoints.
+2. Claims due schedule buckets and starts those workflow runs.
+3. Claims due timers and delivers `__timer` signals to sleeping runs.
+4. Stops when it reaches count or time budgets.
 
 The response includes:
 
@@ -145,7 +145,7 @@ The response includes:
 - `remainingMayExist`: true if another sweep may be useful
 
 This is the safety valve for serverless hosts. A sweep should be small enough to
-fit comfortably inside one host invocation.
+fit comfortably inside one host execution.
 
 ## Leases
 
@@ -153,6 +153,7 @@ Leases prevent two workers from executing the same run or due timer at the same
 time. They are intentionally time-bounded:
 
 - a worker claims work with `leaseOwner` and `leaseMs`
+- the runtime renews the run lease every third of `leaseMs` while driving
 - another worker cannot claim it until the lease expires
 - if the worker crashes, stale lease recovery can claim it later
 
@@ -209,6 +210,20 @@ await runtime.sweep({
 
 This keeps busy cron sweeps from exploding memory while still making summaries
 observable.
+
+Use `publish` for live fan-out without retaining events in the result:
+
+```ts
+await runtime.startRun({
+  workflowId: 'fulfillment',
+  runId,
+  input,
+  includeEvents: false,
+  publish: (runId, event) => eventBus.publish(runId, event),
+})
+```
+
+Publishers are best-effort and do not participate in durable execution.
 
 ## What remains user-owned
 
