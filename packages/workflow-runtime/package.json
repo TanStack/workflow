@@ -55,7 +55,12 @@
     "src"
   ],
   "dependencies": {
-    "@opentelemetry/api": "^1.9.0",
     "@tanstack/workflow-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "^1.9.0"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0"
   }
 }
