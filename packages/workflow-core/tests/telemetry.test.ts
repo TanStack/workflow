@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { createWorkflow, inMemoryRunStore, runWorkflow } from '../src'
+import { describe, expect, it, vi } from 'vitest'
+import { trace } from '@opentelemetry/api'
+import {
+  createWorkflow,
+  createWorkflowTelemetry,
+  inMemoryRunStore,
+  runWorkflow,
+} from '../src'
 import { collect } from './test-utils'
 import type {
   Attributes,
@@ -14,6 +20,27 @@ import type {
 } from '@opentelemetry/api'
 
 describe('workflow OpenTelemetry tracing', () => {
+  it('does not expose an ambient span when telemetry is disabled', async () => {
+    const ambientSpan = new TestSpan('ambient', undefined)
+    const activeSpanSpy = vi
+      .spyOn(trace, 'getActiveSpan')
+      .mockReturnValue(ambientSpan)
+
+    try {
+      const telemetry = createWorkflowTelemetry(false, 'test')
+      const callbackSpan = await telemetry.startActiveSpan(
+        'disabled',
+        {},
+        async (span) => span,
+      )
+
+      expect(callbackSpan).not.toBe(ambientSpan)
+      expect(callbackSpan.isRecording()).toBe(false)
+    } finally {
+      activeSpanSpy.mockRestore()
+    }
+  })
+
   it('records fresh step spans without payload or result attributes', async () => {
     const tracer = new TestTracer()
     const workflow = createWorkflow({ id: 'otel-core', version: 'v1' }).handler(

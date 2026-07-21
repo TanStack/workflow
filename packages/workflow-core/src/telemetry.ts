@@ -173,9 +173,7 @@ const disabledWorkflowTelemetry: WorkflowTelemetry = {
   enabled: false,
   spanNamePrefix: DEFAULT_SPAN_NAME_PREFIX,
   async startActiveSpan(_operation, _spanContext, fn) {
-    return await fn(
-      trace.getActiveSpan() ?? trace.wrapSpanContext(INVALID_SPAN_CONTEXT),
-    )
+    return await fn(trace.wrapSpanContext(INVALID_SPAN_CONTEXT))
   },
   addActiveSpanEvent() {},
   mapStepMeta() {
