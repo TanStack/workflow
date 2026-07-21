@@ -1,5 +1,13 @@
 # @tanstack/workflow-store-drizzle-postgres
 
+## 0.0.5
+
+### Patch Changes
+
+- Updated dependencies [[`87340c8`](https://github.com/TanStack/workflow/commit/87340c85cdf4fd1fec38b405db37fa97cc6388fd), [`87340c8`](https://github.com/TanStack/workflow/commit/87340c85cdf4fd1fec38b405db37fa97cc6388fd)]:
+  - @tanstack/workflow-core@0.0.4
+  - @tanstack/workflow-runtime@0.0.3
+
 ## 0.0.3
 
 ### Patch Changes
