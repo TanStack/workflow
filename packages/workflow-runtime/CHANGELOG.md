@@ -1,5 +1,14 @@
 # @tanstack/workflow-runtime
 
+## 0.0.4
+
+### Patch Changes
+
+- Add expired-run recovery, automatic run-lease heartbeats, and best-effort live ([#15](https://github.com/TanStack/workflow/pull/15))
+  event publishing to the workflow runtime.
+- Updated dependencies [[`b928717`](https://github.com/TanStack/workflow/commit/b9287174b44424059895a0ed834b18ce50e0484a)]:
+  - @tanstack/workflow-core@0.0.5
+
 ## 0.0.3
 
 ### Patch Changes
