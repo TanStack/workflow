@@ -226,6 +226,8 @@ export interface StepContext {
   id: string
   /** Current attempt number (1-indexed). */
   attempt: number
+  /** Current runtime-drive metadata and budget helpers. */
+  runtime: StepRuntimeContext
   /** Per-attempt AbortSignal. Fires on:
    *   - step timeout firing
    *   - run-level abort (Ctrl+C / external cancellation) */
@@ -280,6 +282,28 @@ export interface SleepOptions extends DurableOperationOptions {}
 
 export interface DeterministicValueOptions extends DurableOperationOptions {}
 
+export interface ShouldYieldOptions {
+  /** Minimum budget that must remain before starting fresh durable work. */
+  minRemainingMs?: number
+}
+
+export interface YieldOptions extends DurableOperationOptions {
+  reason?: string
+}
+
+export interface StepRuntimeContext {
+  /** Absolute UTC ms runtime deadline, when the runtime supplied one. */
+  deadline?: number
+  /** Remaining runtime budget in ms. Returns Infinity when unbounded. */
+  timeRemaining: () => number
+  /** True when the runtime is too close to its deadline for fresh work. */
+  shouldYield: (options?: ShouldYieldOptions) => boolean
+}
+
+export interface WorkflowRuntimeContext extends StepRuntimeContext {
+  yield: (options?: YieldOptions) => Promise<void>
+}
+
 export interface ApproveOptions extends DurableOperationOptions {
   title: string
   description?: string
@@ -304,6 +328,8 @@ export interface BaseCtx<TInput, TState> {
   state: TState
   /** AbortSignal for the run as a whole. */
   signal: AbortSignal
+  /** Current runtime-drive metadata and budget helpers. */
+  runtime: WorkflowRuntimeContext
 
   // ── Durable primitives (replay-aware) ────────────────────────
   step: <T>(
@@ -333,6 +359,7 @@ export type ReservedCtxFields =
   | 'input'
   | 'state'
   | 'signal'
+  | 'runtime'
   | 'step'
   | 'sleep'
   | 'sleepUntil'

@@ -1,4 +1,5 @@
 import { LogConflictError, StepTimeoutError, WorkflowPaused } from '../types'
+import { createWorkflowTelemetry } from '../telemetry'
 import { diffState, snapshotState } from './state-diff'
 import type {
   AnyMiddleware,
@@ -11,6 +12,7 @@ import type {
   RunState,
   RunStore,
   SerializedError,
+  ShouldYieldOptions,
   SignalDelivery,
   SleepOptions,
   StepContext,
@@ -18,11 +20,16 @@ import type {
   StepRetryOptions,
   WaitForEventOptions,
   WorkflowEvent,
+  YieldOptions,
 } from '../types'
+import type { WorkflowTelemetry, WorkflowTelemetryOptions } from '../telemetry'
 
 // ============================================================
 // Public API
 // ============================================================
+
+const DEFAULT_MIN_YIELD_REMAINING_MS = 1_000
+const AUTOMATIC_YIELD_STEP_ID_PREFIX = '__runtime-yield-'
 
 export interface RunWorkflowOptions {
   workflow: AnyWorkflowDefinition
@@ -46,6 +53,18 @@ export interface RunWorkflowOptions {
   /** Called with the workflow's final output before the run record is
    *  cleaned up. */
   outputSink?: (output: unknown) => void
+  /** OpenTelemetry tracing configuration. Uses the global tracer provider
+   *  by default and records no payloads/results as attributes. */
+  telemetry?: false | WorkflowTelemetryOptions
+  /** Absolute UTC ms deadline for this runtime drive. Workflow automatically
+   *  yields before fresh durable work when the remaining budget is too low. */
+  deadline?: number
+  /** Minimum budget that must remain before starting fresh durable work.
+   *  Defaults to 1000ms when `deadline` is set. */
+  minYieldRemainingMs?: number
+  /** UTC ms wake time used for cooperative yields. Runtime sets this past the
+   *  current sweep timestamp so yielded runs continue on a later sweep. */
+  yieldResumeAt?: number
 }
 
 /**
@@ -128,11 +147,17 @@ export async function* runWorkflow(
 
 interface DriveOptions extends RunWorkflowOptions {
   emit: (event: WorkflowEvent) => void
+  telemetryImpl?: WorkflowTelemetry
 }
 
 type DeliveryLostCode = 'signal_lost' | 'approval_lost'
 
 async function drive(options: DriveOptions): Promise<void> {
+  options.telemetryImpl ??= createWorkflowTelemetry(
+    options.telemetry,
+    '@tanstack/workflow-core',
+  )
+
   if (options.runId && options.attach) {
     await attachRun(options)
     return
@@ -420,6 +445,7 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
     runStore,
     emit,
     abortController,
+    telemetry: options.telemetryImpl!,
     history: [...history],
     nextLogIndex: history.length,
     consumed: new Set(),
@@ -429,7 +455,12 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
       approve: 0,
       now: 0,
       uuid: 0,
+      yield: 0,
     },
+    deadline: options.deadline,
+    minYieldRemainingMs:
+      options.minYieldRemainingMs ?? DEFAULT_MIN_YIELD_REMAINING_MS,
+    yieldResumeAt: options.yieldResumeAt,
     prevStateSnapshot: snapshotState(state),
     state,
     paused: false,
@@ -440,6 +471,12 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
     input: args.input,
     state,
     signal: abortController.signal,
+    runtime: {
+      deadline: options.deadline,
+      timeRemaining: () => timeRemaining(engine),
+      shouldYield: (opts) => shouldYield(engine, opts),
+      yield: (opts) => engineYield(engine, opts),
+    },
 
     step: (id, fn, opts) => engineStep(engine, id, fn, opts),
     sleep: (ms, opts) => engineSleep(engine, ms, opts),
@@ -472,6 +509,9 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
       ctx,
       workflow.handler,
     )
+    // A handler can accidentally catch the internal pause sentinel. The pause
+    // was already persisted, so it must still win over a normal handler return.
+    if (engine.paused) return
     output = validateWorkflowOutput(workflow, output)
     // Flush any final state delta.
     flushStateDelta(engine)
@@ -553,6 +593,7 @@ interface EngineRuntime {
   runStore: RunStore
   emit: (event: WorkflowEvent) => void
   abortController: AbortController
+  telemetry: WorkflowTelemetry
   /** Pre-loaded log from prior invocations, used for replay short-
    *  circuit. */
   history: ReadonlyArray<WorkflowEvent>
@@ -572,12 +613,50 @@ interface EngineRuntime {
     approve: number
     now: number
     uuid: number
+    yield: number
   }
+  deadline?: number
+  minYieldRemainingMs: number
+  yieldResumeAt?: number
   prevStateSnapshot: Record<string, unknown>
   state: Record<string, unknown>
   /** Set to `true` by the primitive that paused the run, so the
    *  outer catch knows not to write a terminal event. */
   paused: boolean
+}
+
+function timeRemaining(engine: EngineRuntime): number {
+  if (engine.deadline === undefined) return Number.POSITIVE_INFINITY
+  return Math.max(0, engine.deadline - Date.now())
+}
+
+function shouldYield(
+  engine: EngineRuntime,
+  options?: ShouldYieldOptions,
+): boolean {
+  if (engine.deadline === undefined) return false
+  const minRemainingMs = Math.max(
+    0,
+    options?.minRemainingMs ?? engine.minYieldRemainingMs,
+  )
+  return timeRemaining(engine) <= minRemainingMs
+}
+
+async function yieldForDeadlineIfNeeded(engine: EngineRuntime): Promise<void> {
+  if (!shouldYield(engine)) return
+
+  const previousYields = engine.history.filter(
+    (event) =>
+      event.type === 'SIGNAL_AWAITED' &&
+      event.name === '__timer' &&
+      event.stepId.startsWith(AUTOMATIC_YIELD_STEP_ID_PREFIX),
+  ).length
+
+  await engineWaitForEvent<void>(engine, '__timer', {
+    id: `${AUTOMATIC_YIELD_STEP_ID_PREFIX}${previousYields}`,
+    deadline: engine.yieldResumeAt ?? Date.now() + 1,
+    meta: { reason: 'deadline' },
+  })
 }
 
 // ============================================================
@@ -602,6 +681,12 @@ async function engineStep<T>(
       e.stepId === stepId,
   )
   if (cached) {
+    engine.telemetry.addActiveSpanEvent('workflow.step.replayed', {
+      'tanstack.workflow.workflow_id': engine.workflow.id,
+      'tanstack.workflow.workflow_version': engine.workflow.version,
+      'tanstack.workflow.run_id': engine.runId,
+      'tanstack.workflow.step_id': stepId,
+    })
     if (cached.event.type === 'STEP_FAILED') {
       throw rehydrateError(cached.event.error)
     }
@@ -614,6 +699,8 @@ async function engineStep<T>(
     return event.result as T
   }
 
+  await yieldForDeadlineIfNeeded(engine)
+
   // Fresh execution.
   engine.emit({
     type: 'STEP_STARTED',
@@ -622,142 +709,172 @@ async function engineStep<T>(
     meta: options?.meta,
   })
 
-  const startedAt = Date.now()
-  const retryPolicy = options?.retry ?? engine.workflow.defaultStepRetry
-  const maxAttempts = Math.max(1, retryPolicy?.maxAttempts ?? 1)
-  const attempts: Array<{
-    startedAt: number
-    finishedAt: number
-    result?: unknown
-    error?: SerializedError
-  }> = []
-  let lastError: unknown
-  let result: unknown
-  let succeeded = false
+  return await engine.telemetry.startActiveSpan(
+    'step',
+    {
+      workflowId: engine.workflow.id,
+      workflowVersion: engine.workflow.version,
+      runId: engine.runId,
+      stepId,
+    },
+    async (span) => {
+      const retryPolicy = options?.retry ?? engine.workflow.defaultStepRetry
+      const maxAttempts = Math.max(1, retryPolicy?.maxAttempts ?? 1)
+      const attempts: Array<{
+        startedAt: number
+        finishedAt: number
+        result?: unknown
+        error?: SerializedError
+      }> = []
+      let lastError: unknown
+      let result: unknown
+      let succeeded = false
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const attemptStart = Date.now()
-    const attemptController = new AbortController()
-    // Eager propagation: addEventListener doesn't fire for already-
-    // aborted signals, so check + abort upfront.
-    if (engine.abortController.signal.aborted) attemptController.abort()
-    const onParentAbort = () => attemptController.abort()
-    engine.abortController.signal.addEventListener('abort', onParentAbort, {
-      once: true,
-    })
-    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
-    let timedOut = false
-    if (options?.timeout && options.timeout > 0) {
-      timeoutHandle = setTimeout(() => {
-        timedOut = true
-        attemptController.abort()
-      }, options.timeout)
-    }
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const attemptStart = Date.now()
+        span.addEvent('workflow.step.attempt.started', { attempt })
+        const attemptController = new AbortController()
+        // Eager propagation: addEventListener doesn't fire for already-
+        // aborted signals, so check + abort upfront.
+        if (engine.abortController.signal.aborted) attemptController.abort()
+        const onParentAbort = () => attemptController.abort()
+        engine.abortController.signal.addEventListener('abort', onParentAbort, {
+          once: true,
+        })
+        let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+        let timedOut = false
+        if (options?.timeout && options.timeout > 0) {
+          timeoutHandle = setTimeout(() => {
+            timedOut = true
+            span.addEvent('workflow.step.attempt.timeout', { attempt })
+            attemptController.abort()
+          }, options.timeout)
+        }
 
-    try {
-      const fnPromise = Promise.resolve(
-        fn({
-          id: `${engine.runId}:${stepId}`,
-          attempt,
-          signal: attemptController.signal,
-        }),
-      )
-      result = options?.timeout
-        ? await Promise.race([
-            fnPromise,
-            new Promise<never>((_, reject) => {
-              attemptController.signal.addEventListener(
+        try {
+          const fnPromise = Promise.resolve(
+            fn({
+              id: `${engine.runId}:${stepId}`,
+              attempt,
+              runtime: {
+                deadline: engine.deadline,
+                timeRemaining: () => timeRemaining(engine),
+                shouldYield: (opts) => shouldYield(engine, opts),
+              },
+              signal: attemptController.signal,
+            }),
+          )
+          result = options?.timeout
+            ? await Promise.race([
+                fnPromise,
+                new Promise<never>((_, reject) => {
+                  attemptController.signal.addEventListener(
+                    'abort',
+                    () => {
+                      if (timedOut) {
+                        reject(new StepTimeoutError(stepId, options.timeout!))
+                      } else if (engine.abortController.signal.aborted) {
+                        reject(new Error('Workflow aborted'))
+                      } else {
+                        reject(new StepTimeoutError(stepId, options.timeout!))
+                      }
+                    },
+                    { once: true },
+                  )
+                }),
+              ])
+            : await fnPromise
+          attempts.push({
+            startedAt: attemptStart,
+            finishedAt: Date.now(),
+            result,
+          })
+          span.addEvent('workflow.step.attempt.finished', { attempt })
+          succeeded = true
+          if (timeoutHandle) clearTimeout(timeoutHandle)
+          engine.abortController.signal.removeEventListener(
+            'abort',
+            onParentAbort,
+          )
+          break
+        } catch (err) {
+          if (timeoutHandle) clearTimeout(timeoutHandle)
+          engine.abortController.signal.removeEventListener(
+            'abort',
+            onParentAbort,
+          )
+          lastError = err
+          attempts.push({
+            startedAt: attemptStart,
+            finishedAt: Date.now(),
+            error: serializeError(err),
+          })
+          span.addEvent('workflow.step.attempt.failed', { attempt })
+          const shouldRetry =
+            attempt < maxAttempts &&
+            (retryPolicy?.shouldRetry?.(err, attempt) ?? true)
+          if (!shouldRetry) break
+          const delayMs = computeBackoffMs(retryPolicy, attempt)
+          if (delayMs > 0) {
+            await new Promise<void>((resolve) => {
+              const t = setTimeout(resolve, delayMs)
+              engine.abortController.signal.addEventListener(
                 'abort',
                 () => {
-                  if (timedOut) {
-                    reject(new StepTimeoutError(stepId, options.timeout!))
-                  } else if (engine.abortController.signal.aborted) {
-                    reject(new Error('Workflow aborted'))
-                  } else {
-                    reject(new StepTimeoutError(stepId, options.timeout!))
-                  }
+                  clearTimeout(t)
+                  resolve()
                 },
                 { once: true },
               )
-            }),
-          ])
-        : await fnPromise
-      attempts.push({
-        startedAt: attemptStart,
-        finishedAt: Date.now(),
-        result,
-      })
-      succeeded = true
-      if (timeoutHandle) clearTimeout(timeoutHandle)
-      engine.abortController.signal.removeEventListener('abort', onParentAbort)
-      break
-    } catch (err) {
-      if (timeoutHandle) clearTimeout(timeoutHandle)
-      engine.abortController.signal.removeEventListener('abort', onParentAbort)
-      lastError = err
-      attempts.push({
-        startedAt: attemptStart,
-        finishedAt: Date.now(),
-        error: serializeError(err),
-      })
-      const shouldRetry =
-        attempt < maxAttempts &&
-        (retryPolicy?.shouldRetry?.(err, attempt) ?? true)
-      if (!shouldRetry) break
-      const delayMs = computeBackoffMs(retryPolicy, attempt)
-      if (delayMs > 0) {
-        await new Promise<void>((resolve) => {
-          const t = setTimeout(resolve, delayMs)
-          engine.abortController.signal.addEventListener(
-            'abort',
-            () => {
-              clearTimeout(t)
-              resolve()
-            },
-            { once: true },
-          )
-        })
-        if (engine.abortController.signal.aborted) break
+            })
+            if (engine.abortController.signal.aborted) break
+          }
+        }
       }
-    }
-  }
 
-  if (!succeeded) {
-    const failedEvent: WorkflowEvent = {
-      type: 'STEP_FAILED',
-      ts: Date.now(),
+      if (!succeeded) {
+        const failedEvent: WorkflowEvent = {
+          type: 'STEP_FAILED',
+          ts: Date.now(),
+          stepId,
+          error: serializeError(lastError),
+          attempts: attempts.length > 1 ? attempts : undefined,
+          meta: options?.meta,
+        }
+        await emitAndAppend(
+          engine.runStore,
+          engine.runId,
+          engine.nextLogIndex++,
+          engine.emit,
+          failedEvent,
+        )
+        throw rehydrateError(serializeError(lastError))
+      }
+
+      const finishedEvent: WorkflowEvent = {
+        type: 'STEP_FINISHED',
+        ts: Date.now(),
+        stepId,
+        result,
+        attempts: attempts.length > 1 ? attempts : undefined,
+        meta: options?.meta,
+      }
+      await emitAndAppend(
+        engine.runStore,
+        engine.runId,
+        engine.nextLogIndex++,
+        engine.emit,
+        finishedEvent,
+      )
+      return result as T
+    },
+    engine.telemetry.mapStepMeta(options?.meta, {
+      workflowId: engine.workflow.id,
+      workflowVersion: engine.workflow.version,
+      runId: engine.runId,
       stepId,
-      error: serializeError(lastError),
-      attempts: attempts.length > 1 ? attempts : undefined,
-      meta: options?.meta,
-    }
-    await emitAndAppend(
-      engine.runStore,
-      engine.runId,
-      engine.nextLogIndex++,
-      engine.emit,
-      failedEvent,
-    )
-    throw rehydrateError(serializeError(lastError))
-  }
-
-  void startedAt
-  const finishedEvent: WorkflowEvent = {
-    type: 'STEP_FINISHED',
-    ts: Date.now(),
-    stepId,
-    result,
-    attempts: attempts.length > 1 ? attempts : undefined,
-    meta: options?.meta,
-  }
-  await emitAndAppend(
-    engine.runStore,
-    engine.runId,
-    engine.nextLogIndex++,
-    engine.emit,
-    finishedEvent,
+    }),
   )
-  return result as T
 }
 
 async function engineWaitForEvent<TPayload>(
@@ -866,6 +983,22 @@ function engineSleep(
   return engineSleepUntil(engine, Date.now() + ms, options)
 }
 
+function engineYield(
+  engine: EngineRuntime,
+  options: YieldOptions = {},
+): Promise<void> {
+  const meta =
+    options.reason === undefined
+      ? options.meta
+      : { ...options.meta, reason: options.reason }
+
+  return engineWaitForEvent<void>(engine, '__timer', {
+    id: options.id ?? `__yield-${engine.counters.yield++}`,
+    deadline: engine.yieldResumeAt ?? Date.now() + 1,
+    meta,
+  })
+}
+
 async function engineApprove(
   engine: EngineRuntime,
   approveOptions: ApproveOptions,
@@ -958,6 +1091,7 @@ async function engineNow(
     return (cached.event as Extract<WorkflowEvent, { type: 'NOW_RECORDED' }>)
       .value
   }
+  await yieldForDeadlineIfNeeded(engine)
   const value = Date.now()
   await emitAndAppend(
     engine.runStore,
@@ -986,6 +1120,7 @@ async function engineUuid(
     return (cached.event as Extract<WorkflowEvent, { type: 'UUID_RECORDED' }>)
       .value
   }
+  await yieldForDeadlineIfNeeded(engine)
   const value = globalThis.crypto.randomUUID()
   await emitAndAppend(
     engine.runStore,
@@ -1012,6 +1147,7 @@ const reservedCtxFields = new Set([
   'input',
   'state',
   'signal',
+  'runtime',
   'step',
   'sleep',
   'sleepUntil',

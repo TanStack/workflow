@@ -43,6 +43,10 @@
           "to": "guide/persistence"
         },
         {
+          "label": "Observability",
+          "to": "guide/observability"
+        },
+        {
           "label": "Deployment",
           "to": "guide/deployment"
         }

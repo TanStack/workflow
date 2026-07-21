@@ -124,6 +124,32 @@ ctx.emit('progress', { step: 3, of: 10 })
 
 Run-level `AbortSignal`. Already-aborted state propagates to `step` fns via `stepCtx.signal`.
 
+## `ctx.runtime`
+
+Runtime deadline metadata and cooperative yielding:
+
+```ts
+ctx.runtime.deadline
+ctx.runtime.timeRemaining()
+ctx.runtime.shouldYield({ minRemainingMs: 2_000 })
+await ctx.runtime.yield({ reason: 'host deadline' })
+```
+
+The runtime automatically yields before fresh durable work when its budget is
+low, so queue loops do not need arbitrary batch sizes:
+
+```ts
+for (let index = 0; ; index++) {
+  const item = await ctx.step(`take-${index}`, takeNextItem)
+  if (!item) break
+  await ctx.step(`process-${item.id}`, () => processItem(item))
+}
+```
+
+`stepCtx.runtime` exposes the deadline, remaining time, and `shouldYield` for
+long-running step logic. A step cannot yield midway because partial step work is
+not a durable checkpoint. Step timeouts remain independent.
+
 ```ts
 await ctx.step('long-fetch', (stepCtx) =>
   fetch(url, { signal: stepCtx.signal }),

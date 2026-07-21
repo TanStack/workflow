@@ -1,8 +1,9 @@
-import { runWorkflow } from '@tanstack/workflow-core'
+import { createWorkflowTelemetry, runWorkflow } from '@tanstack/workflow-core'
 import { createRunStoreAdapter } from './run-store-adapter'
 import type {
   AnyWorkflowDefinition,
   WorkflowEvent,
+  WorkflowTelemetry,
 } from '@tanstack/workflow-core'
 import type {
   DeliverApprovalResult,
@@ -22,24 +23,30 @@ import type {
 
 const DEFAULT_LEASE_MS = 30_000
 const DEFAULT_SWEEP_LIMIT = 25
+const DEFAULT_MIN_YIELD_REMAINING_MS = 1_000
 
 export function createRuntimeDriver<
   TWorkflows extends Record<string, WorkflowRegistration>,
 >(config: WorkflowRuntimeConfig<TWorkflows>) {
+  const telemetry = createWorkflowTelemetry(
+    config.telemetry,
+    '@tanstack/workflow-runtime',
+  )
+
   return {
     startRun(args: WorkflowRuntimeStartRunArgs) {
-      return startRun(config, args)
+      return startRun(config, telemetry, args)
     },
     deliverSignal<TPayload = unknown>(
       args: WorkflowRuntimeDeliverSignalArgs<TPayload>,
     ) {
-      return deliverSignal(config, args)
+      return deliverSignal(config, telemetry, args)
     },
     deliverApproval(args: WorkflowRuntimeDeliverApprovalArgs) {
-      return deliverApproval(config, args)
+      return deliverApproval(config, telemetry, args)
     },
     sweep(args: WorkflowRuntimeSweepArgs = {}) {
-      return sweep(config, args)
+      return sweep(config, telemetry, args)
     },
   }
 }
@@ -48,20 +55,119 @@ async function startRun<
   TWorkflows extends Record<string, WorkflowRegistration>,
 >(
   config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
   args: WorkflowRuntimeStartRunArgs,
 ): Promise<WorkflowRuntimeRunResult> {
-  const now = args.now ?? Date.now()
+  return await telemetry.startActiveSpan(
+    'start_run',
+    {
+      workflowId: args.workflowId,
+      runId: args.runId,
+      leaseOwner: args.leaseOwner,
+    },
+    async (span) => {
+      const startedAt = Date.now()
+      const now = args.now ?? startedAt
+      const deadline = resolveRuntimeDeadline(args, startedAt)
+      const minYieldRemainingMs = normalizeMinYieldRemainingMs(
+        args.minYieldRemainingMs,
+      )
+      const workflow = await loadWorkflow(config, args.workflowId)
+      const workflowVersion = workflow.version
+      span.setAttribute(
+        'tanstack.workflow.workflow_version',
+        workflowVersion ?? '',
+      )
+      const created = await traceStoreOperation(
+        telemetry,
+        'store.create_run',
+        {
+          workflowId: args.workflowId,
+          workflowVersion,
+          runId: args.runId,
+        },
+        () =>
+          config.store.createRun({
+            runId: args.runId,
+            workflowId: args.workflowId,
+            workflowVersion,
+            input: args.input,
+            now,
+          }),
+      )
+
+      if (created.kind === 'existing' && created.run.status !== 'queued') {
+        const result = resultFromExistingRun(created.run)
+        span.setAttribute('tanstack.workflow.result_kind', result.kind)
+        return result
+      }
+
+      const result = await driveClaimedRun(config, telemetry, {
+        workflow,
+        workflowId: args.workflowId,
+        runId: args.runId,
+        input: args.input,
+        now,
+        leaseOwner: args.leaseOwner,
+        leaseMs: args.leaseMs,
+        threadId: args.threadId,
+        includeEvents: args.includeEvents,
+        maxEvents: args.maxEvents,
+        deadline,
+        minYieldRemainingMs,
+        yieldResumeAt: now + 1,
+      })
+      span.setAttribute('tanstack.workflow.result_kind', result.kind)
+      span.setAttribute('tanstack.workflow.event_count', result.eventCount)
+      if (result.eventsTruncated !== undefined) {
+        span.setAttribute(
+          'tanstack.workflow.events_truncated',
+          result.eventsTruncated,
+        )
+      }
+      return result
+    },
+  )
+}
+
+async function startRunFromSweep<
+  TWorkflows extends Record<string, WorkflowRegistration>,
+>(
+  config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
+  args: WorkflowRuntimeStartRunArgs & { yieldResumeAt?: number },
+): Promise<WorkflowRuntimeRunResult> {
+  const startedAt = Date.now()
+  const now = args.now ?? startedAt
+  const deadline = resolveRuntimeDeadline(args, startedAt)
+  const minYieldRemainingMs = normalizeMinYieldRemainingMs(
+    args.minYieldRemainingMs,
+  )
   const workflow = await loadWorkflow(config, args.workflowId)
   const workflowVersion = workflow.version
-  await config.store.createRun({
-    runId: args.runId,
-    workflowId: args.workflowId,
-    workflowVersion,
-    input: args.input,
-    now,
-  })
+  const created = await traceStoreOperation(
+    telemetry,
+    'store.create_run',
+    {
+      workflowId: args.workflowId,
+      workflowVersion,
+      runId: args.runId,
+    },
+    () =>
+      config.store.createRun({
+        runId: args.runId,
+        workflowId: args.workflowId,
+        workflowVersion,
+        input: args.input,
+        now,
+      }),
+  )
 
-  return driveClaimedRun(config, {
+  if (created.kind === 'existing' && created.run.status !== 'queued') {
+    return resultFromRunSnapshot(created.run)
+  }
+
+  return driveClaimedRun(config, telemetry, {
     workflow,
     workflowId: args.workflowId,
     runId: args.runId,
@@ -72,6 +178,9 @@ async function startRun<
     threadId: args.threadId,
     includeEvents: args.includeEvents,
     maxEvents: args.maxEvents,
+    deadline,
+    minYieldRemainingMs,
+    yieldResumeAt: now + 1,
   })
 }
 
@@ -80,9 +189,88 @@ async function deliverSignal<
   TPayload,
 >(
   config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
   args: WorkflowRuntimeDeliverSignalArgs<TPayload>,
 ): Promise<WorkflowRuntimeRunResult> {
-  const now = args.now ?? Date.now()
+  return await telemetry.startActiveSpan(
+    'deliver_signal',
+    {
+      runId: args.runId,
+      signalName: args.name,
+      leaseOwner: args.leaseOwner,
+    },
+    async (span) => {
+      const startedAt = Date.now()
+      const now = args.now ?? startedAt
+      const deadline = resolveRuntimeDeadline(args, startedAt)
+      const minYieldRemainingMs = normalizeMinYieldRemainingMs(
+        args.minYieldRemainingMs,
+      )
+      const delivery = {
+        signalId: args.signalId,
+        stepId: args.stepId,
+        name: args.name,
+        payload: args.payload,
+        meta: args.meta,
+      }
+      const delivered = await traceStoreOperation(
+        telemetry,
+        'store.deliver_signal',
+        { runId: args.runId, signalName: args.name },
+        () =>
+          config.store.deliverSignal({
+            runId: args.runId,
+            delivery,
+            now,
+          }),
+      )
+      if (delivered.kind !== 'delivered') {
+        const result = resultFromSignalDelivery(args.runId, delivered)
+        span.setAttribute('tanstack.workflow.result_kind', result.kind)
+        return result
+      }
+
+      const workflow = await loadWorkflow(config, delivered.run.workflowId)
+      const result = await driveClaimedRun(config, telemetry, {
+        workflow,
+        workflowId: delivered.run.workflowId,
+        runId: args.runId,
+        signalDelivery: delivery,
+        now,
+        leaseOwner: args.leaseOwner,
+        leaseMs: args.leaseMs,
+        threadId: args.threadId,
+        includeEvents: args.includeEvents,
+        maxEvents: args.maxEvents,
+        deadline,
+        minYieldRemainingMs,
+        yieldResumeAt: now + 1,
+      })
+      span.setAttribute(
+        'tanstack.workflow.workflow_id',
+        result.workflowId ?? '',
+      )
+      span.setAttribute('tanstack.workflow.result_kind', result.kind)
+      span.setAttribute('tanstack.workflow.event_count', result.eventCount)
+      return result
+    },
+  )
+}
+
+async function deliverSignalFromRuntime<
+  TWorkflows extends Record<string, WorkflowRegistration>,
+  TPayload,
+>(
+  config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
+  args: WorkflowRuntimeDeliverSignalArgs<TPayload> & { yieldResumeAt?: number },
+): Promise<WorkflowRuntimeRunResult> {
+  const startedAt = Date.now()
+  const now = args.now ?? startedAt
+  const deadline = resolveRuntimeDeadline(args, startedAt)
+  const minYieldRemainingMs = normalizeMinYieldRemainingMs(
+    args.minYieldRemainingMs,
+  )
   const delivery = {
     signalId: args.signalId,
     stepId: args.stepId,
@@ -90,17 +278,23 @@ async function deliverSignal<
     payload: args.payload,
     meta: args.meta,
   }
-  const delivered = await config.store.deliverSignal({
-    runId: args.runId,
-    delivery,
-    now,
-  })
+  const delivered = await traceStoreOperation(
+    telemetry,
+    'store.deliver_signal',
+    { runId: args.runId, signalName: args.name },
+    () =>
+      config.store.deliverSignal({
+        runId: args.runId,
+        delivery,
+        now,
+      }),
+  )
   if (delivered.kind !== 'delivered') {
     return resultFromSignalDelivery(args.runId, delivered)
   }
 
   const workflow = await loadWorkflow(config, delivered.run.workflowId)
-  return driveClaimedRun(config, {
+  return driveClaimedRun(config, telemetry, {
     workflow,
     workflowId: delivered.run.workflowId,
     runId: args.runId,
@@ -111,6 +305,9 @@ async function deliverSignal<
     threadId: args.threadId,
     includeEvents: args.includeEvents,
     maxEvents: args.maxEvents,
+    deadline,
+    minYieldRemainingMs,
+    yieldResumeAt: now + 1,
   })
 }
 
@@ -118,134 +315,210 @@ async function deliverApproval<
   TWorkflows extends Record<string, WorkflowRegistration>,
 >(
   config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
   args: WorkflowRuntimeDeliverApprovalArgs,
 ): Promise<WorkflowRuntimeRunResult> {
-  const now = args.now ?? Date.now()
-  const delivered = await config.store.deliverApproval({
-    runId: args.runId,
-    approval: args.approval,
-    now,
-  })
-  if (delivered.kind !== 'delivered') {
-    return resultFromApprovalDelivery(args.runId, delivered)
-  }
+  return await telemetry.startActiveSpan(
+    'deliver_approval',
+    { runId: args.runId, leaseOwner: args.leaseOwner },
+    async (span) => {
+      const startedAt = Date.now()
+      const now = args.now ?? startedAt
+      const deadline = resolveRuntimeDeadline(args, startedAt)
+      const minYieldRemainingMs = normalizeMinYieldRemainingMs(
+        args.minYieldRemainingMs,
+      )
+      const delivered = await traceStoreOperation(
+        telemetry,
+        'store.deliver_approval',
+        { runId: args.runId },
+        () =>
+          config.store.deliverApproval({
+            runId: args.runId,
+            approval: args.approval,
+            now,
+          }),
+      )
+      if (delivered.kind !== 'delivered') {
+        const result = resultFromApprovalDelivery(args.runId, delivered)
+        span.setAttribute('tanstack.workflow.result_kind', result.kind)
+        return result
+      }
 
-  const workflow = await loadWorkflow(config, delivered.run.workflowId)
-  return driveClaimedRun(config, {
-    workflow,
-    workflowId: delivered.run.workflowId,
-    runId: args.runId,
-    approval: args.approval,
-    now,
-    leaseOwner: args.leaseOwner,
-    leaseMs: args.leaseMs,
-    threadId: args.threadId,
-    includeEvents: args.includeEvents,
-    maxEvents: args.maxEvents,
-  })
+      const workflow = await loadWorkflow(config, delivered.run.workflowId)
+      const result = await driveClaimedRun(config, telemetry, {
+        workflow,
+        workflowId: delivered.run.workflowId,
+        runId: args.runId,
+        approval: args.approval,
+        now,
+        leaseOwner: args.leaseOwner,
+        leaseMs: args.leaseMs,
+        threadId: args.threadId,
+        includeEvents: args.includeEvents,
+        maxEvents: args.maxEvents,
+        deadline,
+        minYieldRemainingMs,
+        yieldResumeAt: now + 1,
+      })
+      span.setAttribute(
+        'tanstack.workflow.workflow_id',
+        result.workflowId ?? '',
+      )
+      span.setAttribute('tanstack.workflow.result_kind', result.kind)
+      span.setAttribute('tanstack.workflow.event_count', result.eventCount)
+      return result
+    },
+  )
 }
 
 async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
   config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
   args: WorkflowRuntimeSweepArgs,
 ): Promise<WorkflowRuntimeSweepResult> {
-  const now = args.now ?? Date.now()
-  const startedAt = Date.now()
-  const maxScheduledRuns = normalizeSweepLimit(
-    args.maxScheduledRuns ?? args.limit,
-    DEFAULT_SWEEP_LIMIT,
-    'maxScheduledRuns',
+  return await telemetry.startActiveSpan(
+    'sweep',
+    { leaseOwner: args.leaseOwner },
+    async (span) => {
+      const startedAt = Date.now()
+      const now = args.now ?? startedAt
+      const deadline = resolveRuntimeDeadline(args, startedAt)
+      const minYieldRemainingMs = normalizeMinYieldRemainingMs(
+        args.minYieldRemainingMs,
+      )
+      const maxScheduledRuns = normalizeSweepLimit(
+        args.maxScheduledRuns ?? args.limit,
+        DEFAULT_SWEEP_LIMIT,
+        'maxScheduledRuns',
+      )
+      const maxTimers = normalizeSweepLimit(
+        args.maxTimers ?? args.limit,
+        DEFAULT_SWEEP_LIMIT,
+        'maxTimers',
+      )
+      const leaseOwner = args.leaseOwner ?? `sweep:${now}`
+      span.setAttribute('tanstack.workflow.lease_owner', leaseOwner)
+      const leaseMs = args.leaseMs ?? config.defaultLeaseMs ?? DEFAULT_LEASE_MS
+      const scheduled: Array<WorkflowRuntimeRunResult> = []
+      const timers: Array<WorkflowRuntimeRunResult> = []
+      let deadlineReached = false
+
+      while (scheduled.length < maxScheduledRuns) {
+        if (shouldStopForDeadline(deadline, minYieldRemainingMs)) {
+          deadlineReached = true
+          break
+        }
+
+        const buckets = await traceStoreOperation(
+          telemetry,
+          'store.claim_due_schedule_buckets',
+          { leaseOwner },
+          () =>
+            config.store.claimDueScheduleBuckets({
+              now,
+              limit: 1,
+              leaseOwner,
+              leaseMs,
+            }),
+        )
+        const bucket = buckets[0]
+        if (!bucket) break
+
+        const result = await startRunFromSweep(config, telemetry, {
+          workflowId: bucket.workflowId,
+          runId: bucket.runId,
+          input: bucket.input,
+          now,
+          leaseOwner,
+          leaseMs,
+          includeEvents: args.includeEvents,
+          maxEvents: args.maxEvents,
+          deadline,
+          minYieldRemainingMs,
+          yieldResumeAt: now + 1,
+        })
+        if (result.kind !== 'not-claimable' && result.kind !== 'not-found') {
+          await traceStoreOperation(
+            telemetry,
+            'store.mark_schedule_bucket_started',
+            {
+              scheduleId: bucket.scheduleId,
+              bucketId: bucket.bucketId,
+              runId: bucket.runId,
+            },
+            () =>
+              config.store.markScheduleBucketStarted({
+                scheduleId: bucket.scheduleId,
+                bucketId: bucket.bucketId,
+                runId: bucket.runId,
+                now,
+              }),
+          )
+        }
+        scheduled.push(result)
+      }
+
+      while (timers.length < maxTimers) {
+        if (shouldStopForDeadline(deadline, minYieldRemainingMs)) {
+          deadlineReached = true
+          break
+        }
+
+        const dueTimers = await traceStoreOperation(
+          telemetry,
+          'store.claim_due_timers',
+          { leaseOwner },
+          () =>
+            config.store.claimDueTimers({
+              now,
+              limit: 1,
+              leaseOwner,
+              leaseMs,
+            }),
+        )
+        const timer = dueTimers[0]
+        if (!timer) break
+
+        timers.push(
+          await deliverTimer(config, telemetry, {
+            timer,
+            now,
+            leaseOwner,
+            leaseMs,
+            includeEvents: args.includeEvents,
+            maxEvents: args.maxEvents,
+            deadline,
+            minYieldRemainingMs,
+            yieldResumeAt: now + 1,
+          }),
+        )
+      }
+
+      const result = {
+        scheduled,
+        timers,
+        summary: summarizeSweep(scheduled, timers),
+        deadlineReached,
+        remainingMayExist:
+          deadlineReached ||
+          scheduled.length >= maxScheduledRuns ||
+          timers.length >= maxTimers,
+      }
+      span.setAttribute(
+        'tanstack.workflow.event_count',
+        result.summary.eventCount,
+      )
+      return result
+    },
   )
-  const maxTimers = normalizeSweepLimit(
-    args.maxTimers ?? args.limit,
-    DEFAULT_SWEEP_LIMIT,
-    'maxTimers',
-  )
-  const leaseOwner = args.leaseOwner ?? `sweep:${now}`
-  const leaseMs = args.leaseMs ?? config.defaultLeaseMs ?? DEFAULT_LEASE_MS
-  const scheduled: Array<WorkflowRuntimeRunResult> = []
-  const timers: Array<WorkflowRuntimeRunResult> = []
-  let deadlineReached = false
-
-  while (scheduled.length < maxScheduledRuns) {
-    if (isPastSweepDeadline(startedAt, args.maxDurationMs)) {
-      deadlineReached = true
-      break
-    }
-
-    const buckets = await config.store.claimDueScheduleBuckets({
-      now,
-      limit: 1,
-      leaseOwner,
-      leaseMs,
-    })
-    const bucket = buckets[0]
-    if (!bucket) break
-
-    const result = await startRun(config, {
-      workflowId: bucket.workflowId,
-      runId: bucket.runId,
-      input: bucket.input,
-      now,
-      leaseOwner,
-      leaseMs,
-      includeEvents: args.includeEvents,
-      maxEvents: args.maxEvents,
-    })
-    if (result.kind !== 'not-claimable' && result.kind !== 'not-found') {
-      await config.store.markScheduleBucketStarted({
-        scheduleId: bucket.scheduleId,
-        bucketId: bucket.bucketId,
-        runId: bucket.runId,
-        now,
-      })
-    }
-    scheduled.push(result)
-  }
-
-  while (timers.length < maxTimers) {
-    if (isPastSweepDeadline(startedAt, args.maxDurationMs)) {
-      deadlineReached = true
-      break
-    }
-
-    const dueTimers = await config.store.claimDueTimers({
-      now,
-      limit: 1,
-      leaseOwner,
-      leaseMs,
-    })
-    const timer = dueTimers[0]
-    if (!timer) break
-
-    timers.push(
-      await deliverTimer(config, {
-        timer,
-        now,
-        leaseOwner,
-        leaseMs,
-        includeEvents: args.includeEvents,
-        maxEvents: args.maxEvents,
-      }),
-    )
-  }
-
-  return {
-    scheduled,
-    timers,
-    summary: summarizeSweep(scheduled, timers),
-    deadlineReached,
-    remainingMayExist:
-      deadlineReached ||
-      scheduled.length >= maxScheduledRuns ||
-      timers.length >= maxTimers,
-  }
 }
 
 async function deliverTimer<
   TWorkflows extends Record<string, WorkflowRegistration>,
 >(
   config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
   args: {
     timer: TimerWakeup
     now: number
@@ -253,9 +526,12 @@ async function deliverTimer<
     leaseMs: number
     includeEvents?: boolean
     maxEvents?: number
+    deadline?: number
+    minYieldRemainingMs?: number
+    yieldResumeAt?: number
   },
 ) {
-  return deliverSignal(config, {
+  return deliverSignalFromRuntime(config, telemetry, {
     runId: args.timer.runId,
     signalId: args.timer.signalId,
     name: '__timer',
@@ -265,6 +541,9 @@ async function deliverTimer<
     leaseMs: args.leaseMs,
     includeEvents: args.includeEvents,
     maxEvents: args.maxEvents,
+    deadline: args.deadline,
+    minYieldRemainingMs: args.minYieldRemainingMs,
+    yieldResumeAt: args.yieldResumeAt,
   })
 }
 
@@ -272,6 +551,7 @@ async function driveClaimedRun<
   TWorkflows extends Record<string, WorkflowRegistration>,
 >(
   config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
   args: {
     workflow: AnyWorkflowDefinition
     workflowId: string
@@ -285,91 +565,181 @@ async function driveClaimedRun<
     threadId?: string
     includeEvents?: boolean
     maxEvents?: number
+    deadline?: number
+    minYieldRemainingMs?: number
+    yieldResumeAt?: number
   },
 ): Promise<WorkflowRuntimeRunResult> {
-  const leaseOwner = args.leaseOwner ?? `runtime:${args.runId}`
-  const leaseMs = args.leaseMs ?? config.defaultLeaseMs ?? DEFAULT_LEASE_MS
-  const claim = await config.store.claimRun({
-    runId: args.runId,
-    leaseOwner,
-    leaseMs,
-    now: args.now,
-  })
-
-  if (claim.kind === 'not-found') {
-    return {
-      kind: 'not-found',
-      runId: args.runId,
-      workflowId: args.workflowId,
-      eventCount: 0,
-      events: [],
-    }
-  }
-  if (claim.kind === 'not-claimable') {
-    return {
-      kind: 'not-claimable',
-      runId: args.runId,
-      workflowId: args.workflowId,
-      run: claim.run,
-      eventCount: 0,
-      events: [],
-    }
-  }
-
-  const runStore = createRunStoreAdapter(config.store)
-  const collected = await collectWorkflowEvents(
-    runWorkflow({
-      workflow: args.workflow,
-      runStore,
-      runId: args.runId,
-      input: args.input,
-      signalDelivery: args.signalDelivery,
-      approval: args.approval,
-      threadId: args.threadId,
-    }),
+  return await telemetry.startActiveSpan(
+    'drive_run',
     {
-      includeEvents: args.includeEvents ?? true,
-      maxEvents: args.maxEvents,
+      workflowId: args.workflowId,
+      workflowVersion: args.workflow.version,
+      runId: args.runId,
+      leaseOwner: args.leaseOwner,
+    },
+    async (span) => {
+      const leaseOwner = args.leaseOwner ?? `runtime:${args.runId}`
+      const leaseMs = args.leaseMs ?? config.defaultLeaseMs ?? DEFAULT_LEASE_MS
+      span.setAttribute('tanstack.workflow.lease_owner', leaseOwner)
+      const claim = await traceStoreOperation(
+        telemetry,
+        'store.claim_run',
+        {
+          workflowId: args.workflowId,
+          workflowVersion: args.workflow.version,
+          runId: args.runId,
+          leaseOwner,
+        },
+        () =>
+          config.store.claimRun({
+            runId: args.runId,
+            leaseOwner,
+            leaseMs,
+            now: args.now,
+          }),
+      )
+
+      if (claim.kind === 'not-found') {
+        span.setAttribute('tanstack.workflow.result_kind', 'not-found')
+        return {
+          kind: 'not-found',
+          runId: args.runId,
+          workflowId: args.workflowId,
+          eventCount: 0,
+          events: [],
+        }
+      }
+      if (claim.kind === 'not-claimable') {
+        span.setAttribute('tanstack.workflow.result_kind', 'not-claimable')
+        return {
+          kind: 'not-claimable',
+          runId: args.runId,
+          workflowId: args.workflowId,
+          run: claim.run,
+          eventCount: 0,
+          events: [],
+        }
+      }
+
+      const runStore = createRunStoreAdapter(config.store, telemetry)
+      const collected = await (async () => {
+        try {
+          const events = await collectWorkflowEvents(
+            runWorkflow({
+              workflow: args.workflow,
+              runStore,
+              runId: args.runId,
+              input: args.input,
+              signalDelivery: args.signalDelivery,
+              approval: args.approval,
+              threadId: args.threadId,
+              telemetry: config.telemetry,
+              deadline: args.deadline,
+              minYieldRemainingMs: args.minYieldRemainingMs,
+              yieldResumeAt: args.yieldResumeAt,
+            }),
+            {
+              includeEvents: args.includeEvents ?? true,
+              maxEvents: args.maxEvents,
+            },
+          )
+
+          await syncTimerFromRunState(
+            config,
+            telemetry,
+            args.runId,
+            args.workflowId,
+            args.now,
+          )
+          return events
+        } finally {
+          await traceStoreOperation(
+            telemetry,
+            'store.release_run_lease',
+            {
+              workflowId: args.workflowId,
+              workflowVersion: args.workflow.version,
+              runId: args.runId,
+              leaseOwner,
+            },
+            () =>
+              config.store.releaseRunLease({ runId: args.runId, leaseOwner }),
+          )
+        }
+      })()
+
+      const run = await traceStoreOperation(
+        telemetry,
+        'store.load_run',
+        {
+          workflowId: args.workflowId,
+          workflowVersion: args.workflow.version,
+          runId: args.runId,
+        },
+        () => config.store.loadRun(args.runId),
+      )
+      const result: WorkflowRuntimeRunResult = {
+        kind: classifyRun(run, collected.eventCount),
+        runId: args.runId,
+        workflowId: args.workflowId,
+        run,
+        events: collected.events,
+        eventCount: collected.eventCount,
+        eventsTruncated: collected.eventsTruncated || undefined,
+      }
+      span.setAttribute('tanstack.workflow.result_kind', result.kind)
+      span.setAttribute('tanstack.workflow.event_count', result.eventCount)
+      if (result.eventsTruncated !== undefined) {
+        span.setAttribute(
+          'tanstack.workflow.events_truncated',
+          result.eventsTruncated,
+        )
+      }
+      return result
     },
   )
-
-  await syncTimerFromRunState(config, args.runId, args.workflowId, args.now)
-  await config.store.releaseRunLease({ runId: args.runId, leaseOwner })
-
-  const run = await config.store.loadRun(args.runId)
-  return {
-    kind: classifyRun(run, collected.eventCount),
-    runId: args.runId,
-    workflowId: args.workflowId,
-    run,
-    events: collected.events,
-    eventCount: collected.eventCount,
-    eventsTruncated: collected.eventsTruncated || undefined,
-  }
 }
 
 async function syncTimerFromRunState<
   TWorkflows extends Record<string, WorkflowRegistration>,
 >(
   config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
   runId: string,
   workflowId: string,
   now: number,
 ) {
-  const state = await config.store.loadRunState(runId)
-  const deadline = state?.waitingFor?.deadline
-  if (state?.waitingFor?.signalName !== '__timer' || deadline === undefined) {
+  const state = await traceStoreOperation(
+    telemetry,
+    'store.load_run_state',
+    { workflowId, runId },
+    () => config.store.loadRunState(runId),
+  )
+  const waitingFor = state?.waitingFor
+  const deadline = waitingFor?.deadline
+  if (
+    !state ||
+    waitingFor?.signalName !== '__timer' ||
+    deadline === undefined
+  ) {
     return
   }
 
-  await config.store.scheduleTimer({
-    runId,
-    workflowId,
-    workflowVersion: state.workflowVersion,
-    wakeAt: deadline,
-    signalId: `timer:${runId}:${deadline}`,
-    now,
-  })
+  await traceStoreOperation(
+    telemetry,
+    'store.schedule_timer',
+    { workflowId, workflowVersion: state.workflowVersion, runId },
+    () =>
+      config.store.scheduleTimer({
+        runId,
+        workflowId,
+        workflowVersion: state.workflowVersion,
+        wakeAt: deadline,
+        signalId: `timer:${runId}:${waitingFor.stepId}:${deadline}`,
+        now,
+      }),
+  )
 }
 
 async function loadWorkflow<
@@ -413,6 +783,23 @@ function normalizeWorkflowLoaderResult(
   return result.workflow
 }
 
+async function traceStoreOperation<T>(
+  telemetry: WorkflowTelemetry,
+  operation: string,
+  spanContext: {
+    workflowId?: string
+    workflowVersion?: string
+    runId?: string
+    signalName?: string
+    scheduleId?: string
+    bucketId?: string
+    leaseOwner?: string
+  },
+  fn: () => Promise<T>,
+) {
+  return await telemetry.startActiveSpan(operation, spanContext, fn)
+}
+
 function resultFromSignalDelivery(
   runId: string,
   result: Exclude<DeliverSignalResult, { kind: 'delivered' }>,
@@ -422,6 +809,32 @@ function resultFromSignalDelivery(
     runId,
     run: 'run' in result ? result.run : undefined,
     workflowId: 'run' in result ? result.run.workflowId : undefined,
+    events: [],
+    eventCount: 0,
+  }
+}
+
+function resultFromExistingRun(
+  run: WorkflowExecution,
+): WorkflowRuntimeRunResult {
+  return {
+    kind: 'not-claimable',
+    runId: run.runId,
+    workflowId: run.workflowId,
+    run,
+    events: [],
+    eventCount: 0,
+  }
+}
+
+function resultFromRunSnapshot(
+  run: WorkflowExecution,
+): WorkflowRuntimeRunResult {
+  return {
+    kind: classifyRun(run, 0),
+    runId: run.runId,
+    workflowId: run.workflowId,
+    run,
     events: [],
     eventCount: 0,
   }
@@ -464,11 +877,46 @@ function normalizeSweepLimit(
   return limit
 }
 
-function isPastSweepDeadline(
+function resolveRuntimeDeadline(
+  args: { deadline?: number; maxDurationMs?: number },
   startedAt: number,
-  maxDurationMs: number | undefined,
 ) {
-  return maxDurationMs !== undefined && Date.now() - startedAt >= maxDurationMs
+  if (args.deadline !== undefined && !Number.isFinite(args.deadline)) {
+    throw new Error('Workflow runtime deadline must be a finite timestamp.')
+  }
+  if (
+    args.maxDurationMs !== undefined &&
+    (!Number.isFinite(args.maxDurationMs) || args.maxDurationMs < 0)
+  ) {
+    throw new Error(
+      'Workflow runtime maxDurationMs must be a non-negative finite number.',
+    )
+  }
+
+  const durationDeadline =
+    args.maxDurationMs === undefined
+      ? undefined
+      : startedAt + args.maxDurationMs
+  if (args.deadline === undefined) return durationDeadline
+  if (durationDeadline === undefined) return args.deadline
+  return Math.min(args.deadline, durationDeadline)
+}
+
+function normalizeMinYieldRemainingMs(value: number | undefined) {
+  const normalized = value ?? DEFAULT_MIN_YIELD_REMAINING_MS
+  if (!Number.isFinite(normalized) || normalized < 0) {
+    throw new Error(
+      'Workflow runtime minYieldRemainingMs must be a non-negative finite number.',
+    )
+  }
+  return normalized
+}
+
+function shouldStopForDeadline(
+  deadline: number | undefined,
+  minYieldRemainingMs: number,
+) {
+  return deadline !== undefined && deadline - Date.now() <= minYieldRemainingMs
 }
 
 function summarizeSweep(
