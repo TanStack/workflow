@@ -67,6 +67,7 @@ export type {
   WorkflowRuntimeDeliverApprovalArgs,
   WorkflowRuntimeDeliverSignalArgs,
   WorkflowRuntimeDefinition,
+  WorkflowRuntimeEventPublisher,
   WorkflowRuntimeRunResult,
   WorkflowRuntimeRunResultKind,
   WorkflowRuntimeStartRunArgs,

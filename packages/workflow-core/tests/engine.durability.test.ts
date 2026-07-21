@@ -20,6 +20,45 @@ import {
 } from './test-utils'
 
 describe('engine durability', () => {
+  it('recovers an interrupted running execution from checkpoints', async () => {
+    let firstExecutions = 0
+    let secondExecutions = 0
+    let interrupt = true
+    const wf = createWorkflow({ id: 'recover' }).handler(async (ctx) => {
+      const first = await ctx.step('first', () => ++firstExecutions)
+      if (interrupt) await ctx.approve({ title: 'interrupt here' })
+      const second = await ctx.step('second', () => ++secondExecutions)
+      return { first, second }
+    })
+
+    const store = inMemoryRunStore()
+    const phase1 = await collect(
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
+    )
+    const runId = findRunId(phase1)
+    const interruptedState = await store.getRunState(runId)
+    expect(interruptedState).toBeDefined()
+    await store.setRunState(runId, {
+      ...interruptedState!,
+      status: 'running',
+      pendingApproval: undefined,
+    })
+
+    interrupt = false
+    simulateRestart(store)
+    const phase2 = await collect(
+      runWorkflow({ workflow: wf, runId, recover: true, runStore: store }),
+    )
+
+    expect(firstExecutions).toBe(1)
+    expect(secondExecutions).toBe(1)
+    expect(phase2.find((event) => event.type === 'RUN_FINISHED')).toMatchObject(
+      {
+        output: { first: 1, second: 1 },
+      },
+    )
+  })
+
   it('does not re-execute step fns on replay', async () => {
     let aCount = 0
     let bCount = 0

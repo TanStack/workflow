@@ -85,6 +85,60 @@ describe('workflow runtime driver', () => {
     expect(cappedEvents.eventsTruncated).toBe(true)
   })
 
+  it('publishes live events without retaining them in the result', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const releaseStep = deferred<void>()
+    const stepPublished = deferred<void>()
+    const configuredEvents: Array<string> = []
+    const requestedEvents: Array<string> = []
+    const workflow = createWorkflow({ id: 'live-events' }).handler(
+      async (ctx) => {
+        return ctx.step('slow-step', async () => {
+          await releaseStep.promise
+          return { done: true }
+        })
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      publish: (_runId, event) => {
+        configuredEvents.push(event.type)
+      },
+      workflows: {
+        'live-events': { load: async () => workflow },
+      },
+    })
+
+    let settled = false
+    const runPromise = runtime
+      .startRun({
+        workflowId: 'live-events',
+        runId: 'live-events:1',
+        input: {},
+        includeEvents: false,
+        publish: (_runId, event) => {
+          requestedEvents.push(event.type)
+          if (event.type === 'STEP_STARTED') stepPublished.resolve()
+        },
+      })
+      .finally(() => {
+        settled = true
+      })
+
+    await stepPublished.promise
+    expect(settled).toBe(false)
+    expect(configuredEvents).toContain('STEP_STARTED')
+    expect(requestedEvents).toContain('STEP_STARTED')
+
+    releaseStep.resolve()
+    const result = await runPromise
+
+    expect(result.kind).toBe('completed')
+    expect(result.events).toEqual([])
+    expect(configuredEvents).toContain('RUN_FINISHED')
+    expect(requestedEvents).toContain('RUN_FINISHED')
+  })
+
   it('exposes runtime deadline helpers on handler and step contexts', async () => {
     const store = inMemoryWorkflowExecutionStore()
     const deadline = Date.now() + 60_000
@@ -771,6 +825,201 @@ describe('workflow runtime driver', () => {
     expect(second.summary.scheduled.completed).toBe(1)
   })
 
+  it('heartbeats the run lease during long work and stops after the drive', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+
+    try {
+      const store = inMemoryWorkflowExecutionStore()
+      const heartbeat = vi.spyOn(store, 'heartbeatRunLease')
+      const stepStarted = deferred<void>()
+      const releaseStep = deferred<void>()
+      const workflow = createWorkflow({ id: 'heartbeat' }).handler(
+        async (ctx) => {
+          return ctx.step('slow-step', async () => {
+            stepStarted.resolve()
+            await releaseStep.promise
+            return { done: true }
+          })
+        },
+      )
+      const runtime = defineWorkflowRuntime({
+        store,
+        workflows: {
+          heartbeat: { load: async () => workflow },
+        },
+      })
+
+      const runPromise = runtime.startRun({
+        workflowId: 'heartbeat',
+        runId: 'heartbeat:1',
+        input: {},
+        now: 1_000,
+        leaseOwner: 'worker-a',
+        leaseMs: 90,
+      })
+      await stepStarted.promise
+
+      await vi.advanceTimersByTimeAsync(30)
+      expect(heartbeat).toHaveBeenCalledWith({
+        runId: 'heartbeat:1',
+        leaseOwner: 'worker-a',
+        leaseMs: 90,
+        now: 1_030,
+      })
+      expect(await store.loadRun('heartbeat:1')).toMatchObject({
+        lease: { owner: 'worker-a', expiresAt: 1_120 },
+      })
+      expect(
+        (
+          await runtime.sweep({
+            now: 1_119,
+            leaseOwner: 'worker-b',
+          })
+        ).recovered,
+      ).toEqual([])
+
+      releaseStep.resolve()
+      expect((await runPromise).kind).toBe('completed')
+      const heartbeatCount = heartbeat.mock.calls.length
+
+      await vi.advanceTimersByTimeAsync(90)
+      expect(heartbeat).toHaveBeenCalledTimes(heartbeatCount)
+      expect(await store.loadRun('heartbeat:1')).toMatchObject({
+        status: 'finished',
+        lease: undefined,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('recovers stale running executions during sweep', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    let firstExecutions = 0
+    let secondExecutions = 0
+    const published: Array<string> = []
+    const workflow = createWorkflow({ id: 'recover-stale' }).handler(
+      async (ctx) => {
+        const first = await ctx.step('first', () => ++firstExecutions)
+        const second = await ctx.step('second', () => ++secondExecutions)
+        return { first, second }
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'recover-stale': { load: async () => workflow },
+      },
+    })
+
+    await store.createRun({
+      runId: 'recover-stale:1',
+      workflowId: 'recover-stale',
+      input: {},
+      now: 0,
+    })
+    await store.saveRunState({
+      state: {
+        runId: 'recover-stale:1',
+        workflowId: 'recover-stale',
+        status: 'running',
+        input: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    })
+    await store.appendEvents({
+      runId: 'recover-stale:1',
+      expectedNextIndex: 0,
+      events: [
+        {
+          type: 'STEP_FINISHED',
+          ts: 0,
+          stepId: 'first',
+          result: 41,
+        },
+      ],
+    })
+    await store.claimRun({
+      runId: 'recover-stale:1',
+      leaseOwner: 'dead-worker',
+      leaseMs: 100,
+      now: 0,
+    })
+
+    const result = await runtime.sweep({
+      now: 101,
+      leaseOwner: 'recovery-worker',
+      publish: (_runId, event) => {
+        published.push(event.type)
+      },
+    })
+
+    expect(result.recovered).toHaveLength(1)
+    expect(result.recovered[0]).toMatchObject({
+      kind: 'completed',
+      runId: 'recover-stale:1',
+      run: {
+        status: 'finished',
+        lease: undefined,
+        output: { first: 41, second: 1 },
+      },
+    })
+    expect(result.summary.recovered.completed).toBe(1)
+    expect(firstExecutions).toBe(0)
+    expect(secondExecutions).toBe(1)
+    expect(published).toContain('RUN_STARTED')
+    expect(published).toContain('RUN_FINISHED')
+
+    const duplicateSweep = await runtime.sweep({
+      now: 102,
+      leaseOwner: 'other-worker',
+    })
+    expect(duplicateSweep.recovered).toEqual([])
+  })
+
+  it('starts stale executions that crashed before core state was created', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    let executions = 0
+    const workflow = createWorkflow({ id: 'recover-uninitialized' }).handler(
+      async (ctx) => {
+        const value = await ctx.step('work', () => ++executions)
+        return { value }
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'recover-uninitialized': { load: async () => workflow },
+      },
+    })
+
+    await store.createRun({
+      runId: 'recover-uninitialized:1',
+      workflowId: 'recover-uninitialized',
+      input: {},
+      now: 0,
+    })
+    await store.claimRun({
+      runId: 'recover-uninitialized:1',
+      leaseOwner: 'dead-worker',
+      leaseMs: 100,
+      now: 0,
+    })
+
+    const result = await runtime.sweep({
+      now: 101,
+      leaseOwner: 'recovery-worker',
+    })
+
+    expect(result.recovered[0]).toMatchObject({
+      kind: 'completed',
+      run: { output: { value: 1 } },
+    })
+    expect(executions).toBe(1)
+  })
+
   it('reports not-claimable when another worker owns the run lease', async () => {
     const store = inMemoryWorkflowExecutionStore()
     const workflow = createWorkflow({ id: 'leased' }).handler(async () => {
@@ -812,3 +1061,11 @@ describe('workflow runtime driver', () => {
     expect(result.kind).toBe('not-claimable')
   })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}

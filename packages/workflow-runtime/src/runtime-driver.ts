@@ -14,6 +14,7 @@ import type {
   WorkflowRuntimeConfig,
   WorkflowRuntimeDeliverApprovalArgs,
   WorkflowRuntimeDeliverSignalArgs,
+  WorkflowRuntimeEventPublisher,
   WorkflowRuntimeRunResult,
   WorkflowRuntimeRunResultKind,
   WorkflowRuntimeStartRunArgs,
@@ -72,6 +73,7 @@ async function startRun<
       const minYieldRemainingMs = normalizeMinYieldRemainingMs(
         args.minYieldRemainingMs,
       )
+      const leaseMs = resolveLeaseMs(config, args.leaseMs)
       const workflow = await loadWorkflow(config, args.workflowId)
       const workflowVersion = workflow.version
       span.setAttribute(
@@ -109,13 +111,14 @@ async function startRun<
         input: args.input,
         now,
         leaseOwner: args.leaseOwner,
-        leaseMs: args.leaseMs,
+        leaseMs,
         threadId: args.threadId,
         includeEvents: args.includeEvents,
         maxEvents: args.maxEvents,
         deadline,
         minYieldRemainingMs,
         yieldResumeAt: now + 1,
+        publish: args.publish,
       })
       span.setAttribute('tanstack.workflow.result_kind', result.kind)
       span.setAttribute('tanstack.workflow.event_count', result.eventCount)
@@ -143,6 +146,7 @@ async function startRunFromSweep<
   const minYieldRemainingMs = normalizeMinYieldRemainingMs(
     args.minYieldRemainingMs,
   )
+  const leaseMs = resolveLeaseMs(config, args.leaseMs)
   const workflow = await loadWorkflow(config, args.workflowId)
   const workflowVersion = workflow.version
   const created = await traceStoreOperation(
@@ -174,13 +178,14 @@ async function startRunFromSweep<
     input: args.input,
     now,
     leaseOwner: args.leaseOwner,
-    leaseMs: args.leaseMs,
+    leaseMs,
     threadId: args.threadId,
     includeEvents: args.includeEvents,
     maxEvents: args.maxEvents,
     deadline,
     minYieldRemainingMs,
     yieldResumeAt: now + 1,
+    publish: args.publish,
   })
 }
 
@@ -206,6 +211,7 @@ async function deliverSignal<
       const minYieldRemainingMs = normalizeMinYieldRemainingMs(
         args.minYieldRemainingMs,
       )
+      const leaseMs = resolveLeaseMs(config, args.leaseMs)
       const delivery = {
         signalId: args.signalId,
         stepId: args.stepId,
@@ -238,13 +244,14 @@ async function deliverSignal<
         signalDelivery: delivery,
         now,
         leaseOwner: args.leaseOwner,
-        leaseMs: args.leaseMs,
+        leaseMs,
         threadId: args.threadId,
         includeEvents: args.includeEvents,
         maxEvents: args.maxEvents,
         deadline,
         minYieldRemainingMs,
         yieldResumeAt: now + 1,
+        publish: args.publish,
       })
       span.setAttribute(
         'tanstack.workflow.workflow_id',
@@ -271,6 +278,7 @@ async function deliverSignalFromRuntime<
   const minYieldRemainingMs = normalizeMinYieldRemainingMs(
     args.minYieldRemainingMs,
   )
+  const leaseMs = resolveLeaseMs(config, args.leaseMs)
   const delivery = {
     signalId: args.signalId,
     stepId: args.stepId,
@@ -301,13 +309,14 @@ async function deliverSignalFromRuntime<
     signalDelivery: delivery,
     now,
     leaseOwner: args.leaseOwner,
-    leaseMs: args.leaseMs,
+    leaseMs,
     threadId: args.threadId,
     includeEvents: args.includeEvents,
     maxEvents: args.maxEvents,
     deadline,
     minYieldRemainingMs,
     yieldResumeAt: now + 1,
+    publish: args.publish,
   })
 }
 
@@ -328,6 +337,7 @@ async function deliverApproval<
       const minYieldRemainingMs = normalizeMinYieldRemainingMs(
         args.minYieldRemainingMs,
       )
+      const leaseMs = resolveLeaseMs(config, args.leaseMs)
       const delivered = await traceStoreOperation(
         telemetry,
         'store.deliver_approval',
@@ -353,13 +363,14 @@ async function deliverApproval<
         approval: args.approval,
         now,
         leaseOwner: args.leaseOwner,
-        leaseMs: args.leaseMs,
+        leaseMs,
         threadId: args.threadId,
         includeEvents: args.includeEvents,
         maxEvents: args.maxEvents,
         deadline,
         minYieldRemainingMs,
         yieldResumeAt: now + 1,
+        publish: args.publish,
       })
       span.setAttribute(
         'tanstack.workflow.workflow_id',
@@ -397,12 +408,90 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
         DEFAULT_SWEEP_LIMIT,
         'maxTimers',
       )
-      const leaseOwner = args.leaseOwner ?? `sweep:${now}`
+      const maxRecoveredRuns = normalizeSweepLimit(
+        args.maxRecoveredRuns ?? args.limit,
+        DEFAULT_SWEEP_LIMIT,
+        'maxRecoveredRuns',
+      )
+      const leaseOwner = args.leaseOwner ?? createLeaseOwner(`sweep:${now}`)
       span.setAttribute('tanstack.workflow.lease_owner', leaseOwner)
-      const leaseMs = args.leaseMs ?? config.defaultLeaseMs ?? DEFAULT_LEASE_MS
+      const leaseMs = resolveLeaseMs(config, args.leaseMs)
+      const recovered: Array<WorkflowRuntimeRunResult> = []
       const scheduled: Array<WorkflowRuntimeRunResult> = []
       const timers: Array<WorkflowRuntimeRunResult> = []
       let deadlineReached = false
+
+      while (recovered.length < maxRecoveredRuns) {
+        if (shouldStopForDeadline(deadline, minYieldRemainingMs)) {
+          deadlineReached = true
+          break
+        }
+
+        const claims = await traceStoreOperation(
+          telemetry,
+          'store.claim_stale_runs',
+          { leaseOwner },
+          () =>
+            config.store.claimStaleRuns({
+              now,
+              limit: 1,
+              leaseOwner,
+              leaseMs,
+            }),
+        )
+        const claim = claims[0]
+        if (!claim) break
+
+        let workflow: AnyWorkflowDefinition
+        try {
+          workflow = await loadWorkflow(config, claim.run.workflowId)
+        } catch (error) {
+          await traceStoreOperation(
+            telemetry,
+            'store.release_run_lease',
+            {
+              workflowId: claim.run.workflowId,
+              workflowVersion: claim.run.workflowVersion,
+              runId: claim.run.runId,
+              leaseOwner,
+            },
+            () =>
+              config.store.releaseRunLease({
+                runId: claim.run.runId,
+                leaseOwner,
+              }),
+          )
+          throw error
+        }
+        const runState = await traceStoreOperation(
+          telemetry,
+          'store.load_run_state',
+          {
+            workflowId: claim.run.workflowId,
+            workflowVersion: claim.run.workflowVersion,
+            runId: claim.run.runId,
+          },
+          () => config.store.loadRunState(claim.run.runId),
+        )
+        recovered.push(
+          await driveClaimedRun(config, telemetry, {
+            workflow,
+            workflowId: claim.run.workflowId,
+            runId: claim.run.runId,
+            input: claim.run.input,
+            recover: runState !== undefined,
+            now,
+            leaseOwner,
+            leaseMs,
+            includeEvents: args.includeEvents,
+            maxEvents: args.maxEvents,
+            deadline,
+            minYieldRemainingMs,
+            yieldResumeAt: now + 1,
+            publish: args.publish,
+          }),
+        )
+      }
 
       while (scheduled.length < maxScheduledRuns) {
         if (shouldStopForDeadline(deadline, minYieldRemainingMs)) {
@@ -437,6 +526,7 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
           deadline,
           minYieldRemainingMs,
           yieldResumeAt: now + 1,
+          publish: args.publish,
         })
         if (result.kind !== 'not-claimable' && result.kind !== 'not-found') {
           await traceStoreOperation(
@@ -491,17 +581,20 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
             deadline,
             minYieldRemainingMs,
             yieldResumeAt: now + 1,
+            publish: args.publish,
           }),
         )
       }
 
       const result = {
+        recovered,
         scheduled,
         timers,
-        summary: summarizeSweep(scheduled, timers),
+        summary: summarizeSweep(recovered, scheduled, timers),
         deadlineReached,
         remainingMayExist:
           deadlineReached ||
+          recovered.length >= maxRecoveredRuns ||
           scheduled.length >= maxScheduledRuns ||
           timers.length >= maxTimers,
       }
@@ -529,6 +622,7 @@ async function deliverTimer<
     deadline?: number
     minYieldRemainingMs?: number
     yieldResumeAt?: number
+    publish?: WorkflowRuntimeEventPublisher
   },
 ) {
   return deliverSignalFromRuntime(config, telemetry, {
@@ -544,6 +638,7 @@ async function deliverTimer<
     deadline: args.deadline,
     minYieldRemainingMs: args.minYieldRemainingMs,
     yieldResumeAt: args.yieldResumeAt,
+    publish: args.publish,
   })
 }
 
@@ -559,6 +654,7 @@ async function driveClaimedRun<
     input?: unknown
     signalDelivery?: Parameters<typeof runWorkflow>[0]['signalDelivery']
     approval?: Parameters<typeof runWorkflow>[0]['approval']
+    recover?: boolean
     now: number
     leaseOwner?: string
     leaseMs?: number
@@ -568,6 +664,7 @@ async function driveClaimedRun<
     deadline?: number
     minYieldRemainingMs?: number
     yieldResumeAt?: number
+    publish?: WorkflowRuntimeEventPublisher
   },
 ): Promise<WorkflowRuntimeRunResult> {
   return await telemetry.startActiveSpan(
@@ -579,8 +676,9 @@ async function driveClaimedRun<
       leaseOwner: args.leaseOwner,
     },
     async (span) => {
-      const leaseOwner = args.leaseOwner ?? `runtime:${args.runId}`
-      const leaseMs = args.leaseMs ?? config.defaultLeaseMs ?? DEFAULT_LEASE_MS
+      const leaseOwner =
+        args.leaseOwner ?? createLeaseOwner(`runtime:${args.runId}`)
+      const leaseMs = resolveLeaseMs(config, args.leaseMs)
       span.setAttribute('tanstack.workflow.lease_owner', leaseOwner)
       const claim = await traceStoreOperation(
         telemetry,
@@ -596,7 +694,7 @@ async function driveClaimedRun<
             runId: args.runId,
             leaseOwner,
             leaseMs,
-            now: args.now,
+            now: Date.now(),
           }),
       )
 
@@ -623,6 +721,14 @@ async function driveClaimedRun<
       }
 
       const runStore = createRunStoreAdapter(config.store, telemetry)
+      const heartbeat = startLeaseHeartbeat(config, telemetry, {
+        workflowId: args.workflowId,
+        workflowVersion: args.workflow.version,
+        runId: args.runId,
+        leaseOwner,
+        leaseMs,
+      })
+      let heartbeatError: unknown
       const collected = await (async () => {
         try {
           const events = await collectWorkflowEvents(
@@ -633,7 +739,9 @@ async function driveClaimedRun<
               input: args.input,
               signalDelivery: args.signalDelivery,
               approval: args.approval,
+              recover: args.recover,
               threadId: args.threadId,
+              publish: combinePublishers(config.publish, args.publish),
               telemetry: config.telemetry,
               deadline: args.deadline,
               minYieldRemainingMs: args.minYieldRemainingMs,
@@ -654,6 +762,7 @@ async function driveClaimedRun<
           )
           return events
         } finally {
+          heartbeatError = await heartbeat.stop()
           await traceStoreOperation(
             telemetry,
             'store.release_run_lease',
@@ -668,6 +777,8 @@ async function driveClaimedRun<
           )
         }
       })()
+
+      if (heartbeatError) throw heartbeatError
 
       const run = await traceStoreOperation(
         telemetry,
@@ -877,6 +988,25 @@ function normalizeSweepLimit(
   return limit
 }
 
+function normalizeLeaseMs(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(
+      'Workflow runtime leaseMs must be a positive finite number.',
+    )
+  }
+  return value
+}
+
+function resolveLeaseMs<
+  TWorkflows extends Record<string, WorkflowRegistration>,
+>(config: WorkflowRuntimeConfig<TWorkflows>, leaseMs: number | undefined) {
+  return normalizeLeaseMs(leaseMs ?? config.defaultLeaseMs ?? DEFAULT_LEASE_MS)
+}
+
+function createLeaseOwner(prefix: string) {
+  return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`
+}
+
 function resolveRuntimeDeadline(
   args: { deadline?: number; maxDurationMs?: number },
   startedAt: number,
@@ -920,15 +1050,113 @@ function shouldStopForDeadline(
 }
 
 function summarizeSweep(
+  recovered: ReadonlyArray<WorkflowRuntimeRunResult>,
   scheduled: ReadonlyArray<WorkflowRuntimeRunResult>,
   timers: ReadonlyArray<WorkflowRuntimeRunResult>,
 ): WorkflowRuntimeSweepResult['summary'] {
   return {
+    recovered: countRunKinds(recovered),
     scheduled: countRunKinds(scheduled),
     timers: countRunKinds(timers),
-    eventCount: sumEventCounts(scheduled) + sumEventCounts(timers),
+    eventCount:
+      sumEventCounts(recovered) +
+      sumEventCounts(scheduled) +
+      sumEventCounts(timers),
     returnedEventCount:
-      sumReturnedEventCounts(scheduled) + sumReturnedEventCounts(timers),
+      sumReturnedEventCounts(recovered) +
+      sumReturnedEventCounts(scheduled) +
+      sumReturnedEventCounts(timers),
+  }
+}
+
+function startLeaseHeartbeat<
+  TWorkflows extends Record<string, WorkflowRegistration>,
+>(
+  config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
+  args: {
+    workflowId: string
+    workflowVersion?: string
+    runId: string
+    leaseOwner: string
+    leaseMs: number
+  },
+) {
+  const intervalMs = Math.max(1, Math.floor(args.leaseMs / 3))
+  let stopped = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let wake: (() => void) | undefined
+  let failure: unknown
+
+  const loop = (async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated by stop() outside this async loop
+    while (!stopped) {
+      await new Promise<void>((resolve) => {
+        wake = resolve
+        timer = setTimeout(resolve, intervalMs)
+        if (typeof timer === 'object' && 'unref' in timer) timer.unref()
+      })
+      wake = undefined
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated by stop() while this loop is awaiting the timer
+      if (stopped) break
+
+      try {
+        await traceStoreOperation(
+          telemetry,
+          'store.heartbeat_run_lease',
+          {
+            workflowId: args.workflowId,
+            workflowVersion: args.workflowVersion,
+            runId: args.runId,
+            leaseOwner: args.leaseOwner,
+          },
+          () =>
+            config.store.heartbeatRunLease({
+              runId: args.runId,
+              leaseOwner: args.leaseOwner,
+              leaseMs: args.leaseMs,
+              now: Date.now(),
+            }),
+        )
+        failure = undefined
+      } catch (error) {
+        failure = error
+      }
+    }
+  })()
+
+  return {
+    async stop() {
+      stopped = true
+      if (timer !== undefined) clearTimeout(timer)
+      wake?.()
+      await loop
+      return failure
+    },
+  }
+}
+
+function combinePublishers(
+  configured: WorkflowRuntimeEventPublisher | undefined,
+  requested: WorkflowRuntimeEventPublisher | undefined,
+): WorkflowRuntimeEventPublisher | undefined {
+  const publishers = Array.from(
+    new Set(
+      [configured, requested].filter(
+        (value): value is WorkflowRuntimeEventPublisher => value !== undefined,
+      ),
+    ),
+  )
+  if (publishers.length === 0) return undefined
+
+  return async (runId, event) => {
+    for (const publish of publishers) {
+      try {
+        await publish(runId, event)
+      } catch {
+        // Live fan-out is best-effort and must not change durable execution.
+      }
+    }
   }
 }
 
