@@ -1,6 +1,6 @@
 {
   "name": "@tanstack/workflow-store-cloudflare-d1",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Cloudflare D1 durable execution store for TanStack Workflow.",
   "author": "Tanner Linsley",
   "license": "MIT",
