@@ -509,6 +509,9 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
       ctx,
       workflow.handler,
     )
+    // A handler can accidentally catch the internal pause sentinel. The pause
+    // was already persisted, so it must still win over a normal handler return.
+    if (engine.paused) return
     output = validateWorkflowOutput(workflow, output)
     // Flush any final state delta.
     flushStateDelta(engine)

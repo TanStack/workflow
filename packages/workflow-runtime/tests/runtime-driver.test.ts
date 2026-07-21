@@ -307,6 +307,53 @@ describe('workflow runtime driver', () => {
     expect(executions).toBe(1)
   })
 
+  it('stays paused when workflow code catches the automatic yield sentinel', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    let executions = 0
+    let caught = 0
+    const workflow = createWorkflow({ id: 'caught-auto-yield' }).handler(
+      async (ctx) => {
+        try {
+          await ctx.step('work', () => {
+            executions++
+            return 'done'
+          })
+        } catch {
+          caught++
+        }
+        return 'completed'
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'caught-auto-yield': { load: async () => workflow },
+      },
+    })
+
+    const paused = await runtime.startRun({
+      workflowId: 'caught-auto-yield',
+      runId: 'caught-auto-yield:1',
+      input: {},
+      now: 100,
+      deadline: Date.now() - 1,
+    })
+
+    expect(paused.kind).toBe('paused')
+    expect(executions).toBe(0)
+    expect(caught).toBe(1)
+
+    const resumed = await runtime.sweep({
+      now: 101,
+      deadline: Date.now() + 60_000,
+    })
+
+    expect(resumed.timers[0]?.kind).toBe('completed')
+    expect(resumed.timers[0]?.run?.output).toBe('completed')
+    expect(executions).toBe(1)
+    expect(caught).toBe(1)
+  })
+
   it('keeps automatic and explicit yield checkpoints independent', async () => {
     const store = inMemoryWorkflowExecutionStore()
     let executions = 0
