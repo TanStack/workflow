@@ -20,8 +20,9 @@ This guide walks through the production shape:
 1. Define a workflow with `@tanstack/workflow-core`.
 2. Put it behind a runtime with `@tanstack/workflow-runtime`.
 3. Persist executions in a durable store.
-4. Wake due timers and schedules with a host cron, scheduled function, or worker.
-5. Deploy the same workflow code on Cloudflare, Railway, Netlify, Node, Vercel,
+4. Observe runtime, store, and step execution with OpenTelemetry.
+5. Wake due timers and schedules with a host cron, scheduled function, or worker.
+6. Deploy the same workflow code on Cloudflare, Railway, Netlify, Node, Vercel,
    or your own infrastructure.
 
 ## Package map
@@ -161,6 +162,28 @@ export const workflowRuntime = defineWorkflowRuntime({
 
 Use the in-memory store for tests and demos only. Production deployments need a
 store that can persist executions across invocations.
+
+## Add OpenTelemetry
+
+TanStack Workflow emits OpenTelemetry traces through `@opentelemetry/api`.
+Applications own SDK and exporter setup; Workflow emits no-op spans until an SDK
+is configured.
+
+```ts
+export const workflowRuntime = defineWorkflowRuntime({
+  store,
+  workflows,
+  telemetry: {
+    attributes: ({ workflowId }) => ({
+      'app.workflow': workflowId ?? 'unknown',
+    }),
+  },
+})
+```
+
+Workflow traces runtime operations, store calls, sweeps, and fresh `ctx.step`
+executions. It does not record workflow input, output, signal payloads, step
+results, or raw metadata as attributes by default.
 
 ## Use Postgres for durability
 

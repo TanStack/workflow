@@ -8,6 +8,7 @@ import type {
   SerializedError,
   SignalDelivery,
   WorkflowEvent,
+  WorkflowTelemetryOptions,
 } from '@tanstack/workflow-core'
 
 export type WorkflowId = string
@@ -357,6 +358,7 @@ export interface WorkflowRuntimeConfig<
   workflows: TWorkflows
   store: WorkflowExecutionStore
   defaultLeaseMs?: number
+  telemetry?: false | WorkflowTelemetryOptions
 }
 
 export interface WorkflowRuntimeDefinition<
@@ -382,6 +384,9 @@ export interface WorkflowRuntimeStartRunArgs {
   runId: RunId
   input: unknown
   now?: number
+  deadline?: number
+  maxDurationMs?: number
+  minYieldRemainingMs?: number
   leaseOwner?: LeaseOwner
   leaseMs?: number
   threadId?: string
@@ -397,6 +402,9 @@ export interface WorkflowRuntimeDeliverSignalArgs<TPayload = unknown> {
   payload: TPayload
   meta?: Record<string, unknown>
   now?: number
+  deadline?: number
+  maxDurationMs?: number
+  minYieldRemainingMs?: number
   leaseOwner?: LeaseOwner
   leaseMs?: number
   threadId?: string
@@ -408,6 +416,9 @@ export interface WorkflowRuntimeDeliverApprovalArgs {
   runId: RunId
   approval: ApprovalResult
   now?: number
+  deadline?: number
+  maxDurationMs?: number
+  minYieldRemainingMs?: number
   leaseOwner?: LeaseOwner
   leaseMs?: number
   threadId?: string
@@ -440,7 +451,9 @@ export interface WorkflowRuntimeSweepArgs {
   limit?: number
   maxScheduledRuns?: number
   maxTimers?: number
+  deadline?: number
   maxDurationMs?: number
+  minYieldRemainingMs?: number
   leaseOwner?: LeaseOwner
   leaseMs?: number
   includeEvents?: boolean

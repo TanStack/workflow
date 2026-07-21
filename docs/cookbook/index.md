@@ -95,6 +95,39 @@ export const workflowRuntime = defineWorkflowRuntime({
 })
 ```
 
+## Add OpenTelemetry tracing
+
+Configure your app's OpenTelemetry SDK in the host-specific instrumentation
+entrypoint, then create the workflow runtime normally. Workflow emits spans
+through `@opentelemetry/api` and does not configure exporters.
+
+```ts
+export const workflowRuntime = defineWorkflowRuntime({
+  store,
+  workflows,
+  telemetry: {
+    attributes: ({ workflowId }) => ({
+      'app.workflow': workflowId ?? 'unknown',
+    }),
+  },
+})
+```
+
+For Railway or long-running Node services, initialize the SDK before importing
+the runtime. For Vercel, Netlify, and Cloudflare, use the provider's supported
+instrumentation/bootstrap entrypoint. Host adapters inherit tracing because they
+call `runtime.sweep()`.
+
+Disable tracing for tests or sensitive environments:
+
+```ts
+export const workflowRuntime = defineWorkflowRuntime({
+  store,
+  workflows,
+  telemetry: false,
+})
+```
+
 ## Apply workflow store migrations
 
 Workflow owns its durable store schema. Apply the package-owned SQL migration

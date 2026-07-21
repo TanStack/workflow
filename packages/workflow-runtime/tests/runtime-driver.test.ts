@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createWorkflow } from '@tanstack/workflow-core'
 import { defineWorkflowRuntime, inMemoryWorkflowExecutionStore } from '../src'
 
@@ -83,6 +83,478 @@ describe('workflow runtime driver', () => {
     expect(cappedEvents.eventCount).toBeGreaterThan(1)
     expect(cappedEvents.events).toHaveLength(1)
     expect(cappedEvents.eventsTruncated).toBe(true)
+  })
+
+  it('exposes runtime deadline helpers on handler and step contexts', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const deadline = Date.now() + 60_000
+    const workflow = createWorkflow({ id: 'deadline-context' }).handler(
+      async (ctx) => {
+        return ctx.step('read-deadline', (stepCtx) => ({
+          handlerDeadline: ctx.runtime.deadline,
+          stepDeadline: stepCtx.runtime.deadline,
+          handlerRemaining: ctx.runtime.timeRemaining(),
+          stepRemaining: stepCtx.runtime.timeRemaining(),
+          shouldYieldWithSmallBuffer: ctx.runtime.shouldYield({
+            minRemainingMs: 1,
+          }),
+          shouldYieldWithLargeBuffer: stepCtx.runtime.shouldYield({
+            minRemainingMs: 120_000,
+          }),
+        }))
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'deadline-context': {
+          load: async () => {
+            await Promise.resolve()
+            return workflow
+          },
+        },
+      },
+    })
+
+    const result = await runtime.startRun({
+      workflowId: 'deadline-context',
+      runId: 'deadline-context:1',
+      input: {},
+      deadline,
+    })
+
+    expect(result.kind).toBe('completed')
+    expect(result.run?.output).toMatchObject({
+      handlerDeadline: deadline,
+      stepDeadline: deadline,
+      shouldYieldWithSmallBuffer: false,
+      shouldYieldWithLargeBuffer: true,
+    })
+    expect(
+      (result.run?.output as { handlerRemaining?: number }).handlerRemaining,
+    ).toBeGreaterThan(0)
+    expect(
+      (result.run?.output as { stepRemaining?: number }).stepRemaining,
+    ).toBeGreaterThan(0)
+  })
+
+  it('explicit yield persists, releases the lease, and resumes on a later sweep', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    let executions = 0
+    const workflow = createWorkflow({ id: 'manual-yield' }).handler(
+      async (ctx) => {
+        const first = await ctx.step('first', () => ++executions)
+        await ctx.runtime.yield({ reason: 'manual' })
+        const second = await ctx.step('second', () => ++executions)
+        return { first, second }
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'manual-yield': {
+          load: async () => {
+            await Promise.resolve()
+            return workflow
+          },
+        },
+      },
+    })
+
+    const start = await runtime.startRun({
+      workflowId: 'manual-yield',
+      runId: 'manual-yield:1',
+      input: {},
+      now: 100,
+      leaseOwner: 'worker-a',
+    })
+    const yielded = await store.loadRun('manual-yield:1')
+    const resumed = await runtime.sweep({
+      now: 101,
+      leaseOwner: 'worker-b',
+    })
+
+    expect(start.kind).toBe('paused')
+    expect(yielded).toMatchObject({
+      status: 'paused',
+      lease: undefined,
+      waitingFor: { signalName: '__timer', deadline: 101 },
+    })
+    expect(resumed.timers[0]).toMatchObject({
+      kind: 'completed',
+      runId: 'manual-yield:1',
+    })
+    expect(resumed.timers[0]?.run?.output).toEqual({ first: 1, second: 2 })
+    expect(executions).toBe(2)
+  })
+
+  it('does not turn a yielded run back into a stale running row on duplicate start', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const workflow = createWorkflow({ id: 'yield-retry' }).handler(
+      async (ctx) => {
+        await ctx.runtime.yield()
+        return { done: true }
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'yield-retry': { load: async () => workflow },
+      },
+    })
+
+    const first = await runtime.startRun({
+      workflowId: 'yield-retry',
+      runId: 'yield-retry:1',
+      input: {},
+      now: 100,
+    })
+    const duplicate = await runtime.startRun({
+      workflowId: 'yield-retry',
+      runId: 'yield-retry:1',
+      input: {},
+      now: 100,
+    })
+
+    expect(first.kind).toBe('paused')
+    expect(duplicate.kind).toBe('not-claimable')
+    expect(await store.loadRun('yield-retry:1')).toMatchObject({
+      status: 'paused',
+      lease: undefined,
+    })
+  })
+
+  it('releases the lease when scheduling a yielded run fails', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    store.scheduleTimer = async () => {
+      throw new Error('timer store unavailable')
+    }
+    const workflow = createWorkflow({ id: 'yield-schedule-failure' }).handler(
+      async (ctx) => {
+        await ctx.runtime.yield()
+        return {}
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'yield-schedule-failure': { load: async () => workflow },
+      },
+    })
+
+    await expect(
+      runtime.startRun({
+        workflowId: 'yield-schedule-failure',
+        runId: 'yield-schedule-failure:1',
+        input: {},
+        now: 100,
+      }),
+    ).rejects.toThrow('timer store unavailable')
+
+    expect(await store.loadRun('yield-schedule-failure:1')).toMatchObject({
+      status: 'paused',
+      lease: undefined,
+    })
+  })
+
+  it('automatically yields before fresh step work when the runtime deadline is exhausted', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    let executions = 0
+    const workflow = createWorkflow({ id: 'auto-yield' }).handler(
+      async (ctx) => {
+        const value = await ctx.step('fresh-work', () => ++executions)
+        return { value }
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'auto-yield': {
+          load: async () => {
+            await Promise.resolve()
+            return workflow
+          },
+        },
+      },
+    })
+
+    const start = await runtime.startRun({
+      workflowId: 'auto-yield',
+      runId: 'auto-yield:1',
+      input: {},
+      now: 200,
+      deadline: Date.now() - 1,
+      leaseOwner: 'worker-a',
+    })
+    const yielded = await store.loadRun('auto-yield:1')
+
+    expect(start.kind).toBe('paused')
+    expect(executions).toBe(0)
+    expect(yielded).toMatchObject({
+      status: 'paused',
+      lease: undefined,
+      waitingFor: { signalName: '__timer', deadline: 201 },
+    })
+
+    const resumed = await runtime.sweep({
+      now: 201,
+      deadline: Date.now() + 60_000,
+      leaseOwner: 'worker-b',
+    })
+
+    expect(resumed.timers[0]?.kind).toBe('completed')
+    expect(resumed.timers[0]?.run?.output).toEqual({ value: 1 })
+    expect(executions).toBe(1)
+  })
+
+  it('keeps automatic and explicit yield checkpoints independent', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    let executions = 0
+    const workflow = createWorkflow({ id: 'mixed-yield' }).handler(
+      async (ctx) => {
+        const first = await ctx.step('first', () => ++executions)
+        await ctx.runtime.yield({ reason: 'manual' })
+        const second = await ctx.step('second', () => ++executions)
+        return { first, second }
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'mixed-yield': {
+          load: async () => workflow,
+        },
+      },
+    })
+
+    const automaticYield = await runtime.startRun({
+      workflowId: 'mixed-yield',
+      runId: 'mixed-yield:1',
+      input: {},
+      now: 300,
+      deadline: Date.now() - 1,
+    })
+    const explicitYield = await runtime.sweep({
+      now: 301,
+      deadline: Date.now() + 60_000,
+    })
+
+    expect(automaticYield.kind).toBe('paused')
+    expect(explicitYield.timers[0]?.kind).toBe('paused')
+    expect(executions).toBe(1)
+
+    const completed = await runtime.sweep({
+      now: 302,
+      deadline: Date.now() + 60_000,
+    })
+
+    expect(completed.timers[0]?.kind).toBe('completed')
+    expect(completed.timers[0]?.run?.output).toEqual({ first: 1, second: 2 })
+    expect(executions).toBe(2)
+  })
+
+  it('drains unknown-length work until the deadline margin, then resumes without a batch size', async () => {
+    let wallNow = 1_000
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => wallNow)
+
+    try {
+      const store = inMemoryWorkflowExecutionStore()
+      const queue = ['a', 'b', 'c', 'd']
+      const processed: Array<string> = []
+      const workflow = createWorkflow({ id: 'queue-drain' }).handler(
+        async (ctx) => {
+          for (let index = 0; ; index++) {
+            const item = await ctx.step(`take-${index}`, () => {
+              return queue.shift() ?? null
+            })
+            if (item === null) return { processed }
+            await ctx.step(`process-${item}`, () => {
+              processed.push(item)
+              wallNow += 600
+            })
+          }
+        },
+      )
+      const runtime = defineWorkflowRuntime({
+        store,
+        workflows: {
+          'queue-drain': { load: async () => workflow },
+        },
+      })
+
+      const first = await runtime.startRun({
+        workflowId: 'queue-drain',
+        runId: 'queue-drain:1',
+        input: {},
+        now: 10,
+        deadline: 2_500,
+        minYieldRemainingMs: 500,
+      })
+
+      expect(first.kind).toBe('paused')
+      expect(processed).toEqual(['a', 'b'])
+
+      const resumed = await runtime.sweep({
+        now: 11,
+        deadline: 10_000,
+        minYieldRemainingMs: 500,
+      })
+
+      expect(resumed.timers[0]?.kind).toBe('completed')
+      expect(resumed.timers[0]?.run?.output).toEqual({
+        processed: ['a', 'b', 'c', 'd'],
+      })
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
+  it('does not resume a sweep-yielded run again in the same sweep', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    let executions = 0
+    const workflow = createWorkflow({ id: 'sweep-yield' }).handler(
+      async (ctx) => {
+        await ctx.runtime.yield()
+        const value = await ctx.step('fresh-work', () => ++executions)
+        return { value }
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'sweep-yield': {
+          load: async () => {
+            await Promise.resolve()
+            return workflow
+          },
+        },
+      },
+    })
+    await store.upsertSchedule({
+      scheduleId: 'sweep-yield-now',
+      workflowId: 'sweep-yield',
+      schedule: { kind: 'interval', everyMs: 60_000 },
+      overlapPolicy: 'skip',
+      input: {},
+      nextFireAt: 500,
+      enabled: true,
+      now: 0,
+    })
+
+    const first = await runtime.sweep({
+      now: 500,
+      leaseOwner: 'worker-a',
+    })
+
+    expect(first.scheduled[0]?.kind).toBe('paused')
+    expect(first.timers).toEqual([])
+    expect(executions).toBe(0)
+
+    const second = await runtime.sweep({
+      now: 501,
+      deadline: Date.now() + 60_000,
+      leaseOwner: 'worker-b',
+    })
+
+    expect(second.timers[0]?.kind).toBe('completed')
+    expect(executions).toBe(1)
+  })
+
+  it('keeps sequential timers at the same timestamp independently deliverable', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const workflow = createWorkflow({ id: 'same-time-timers' }).handler(
+      async (ctx) => {
+        await ctx.sleepUntil(700, { id: 'first' })
+        await ctx.sleepUntil(700, { id: 'second' })
+        return { done: true }
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'same-time-timers': { load: async () => workflow },
+      },
+    })
+
+    const started = await runtime.startRun({
+      workflowId: 'same-time-timers',
+      runId: 'same-time-timers:1',
+      input: {},
+      now: 700,
+    })
+    const wake = await runtime.sweep({ now: 700 })
+
+    expect(started.kind).toBe('paused')
+    expect(wake.timers.map((result) => result.kind)).toEqual([
+      'paused',
+      'completed',
+    ])
+  })
+
+  it('stops a sweep before claiming work inside the cooperative margin', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const workflow = createWorkflow({ id: 'margin-stop' }).handler(async () => {
+      return { done: true }
+    })
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'margin-stop': { load: async () => workflow },
+      },
+    })
+    await store.upsertSchedule({
+      scheduleId: 'margin-stop-now',
+      workflowId: 'margin-stop',
+      schedule: { kind: 'interval', everyMs: 60_000 },
+      overlapPolicy: 'skip',
+      input: {},
+      nextFireAt: 600,
+      enabled: true,
+      now: 0,
+    })
+
+    const result = await runtime.sweep({
+      now: 600,
+      deadline: Date.now() + 60_000,
+      minYieldRemainingMs: 120_000,
+    })
+
+    expect(result.scheduled).toEqual([])
+    expect(result.deadlineReached).toBe(true)
+    expect(result.remainingMayExist).toBe(true)
+    expect(
+      await store.loadRun('margin-stop:margin-stop-now:600'),
+    ).toBeUndefined()
+  })
+
+  it('uses the earlier of an absolute deadline and max duration', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    let executions = 0
+    const workflow = createWorkflow({ id: 'earliest-deadline' }).handler(
+      async (ctx) => {
+        await ctx.step('work', () => ++executions)
+        return {}
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'earliest-deadline': { load: async () => workflow },
+      },
+    })
+
+    const result = await runtime.startRun({
+      workflowId: 'earliest-deadline',
+      runId: 'earliest-deadline:1',
+      input: {},
+      now: 700,
+      deadline: Date.now() + 60_000,
+      maxDurationMs: 0,
+      minYieldRemainingMs: 0,
+    })
+
+    expect(result.kind).toBe('paused')
+    expect(executions).toBe(0)
   })
 
   it('delivers a signal and resumes a paused workflow', async () => {
