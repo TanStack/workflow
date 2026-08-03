@@ -1,5 +1,23 @@
 <div align="center">
-  <img src="./media/header_template.png" alt="TanStack Template" />
+  <!-- Repointed from the deleted ./media/header_template.png. NOTE: this package
+       is leftover scaffolding from TanStack/template - it is not in
+       pnpm-workspace.yaml, is version 0.0.0, and is not published to npm. The
+       banner now renders, but the package itself is still dead code. -->
+  <picture>
+    <source
+      media="(prefers-color-scheme: dark)"
+      srcset="https://tanstack.com/api/readme/workflow.png?theme=dark"
+    />
+    <source
+      media="(prefers-color-scheme: light)"
+      srcset="https://tanstack.com/api/readme/workflow.png"
+    />
+    <img
+      src="https://tanstack.com/api/readme/workflow.png"
+      alt="TanStack Workflow"
+      width="900"
+    />
+  </picture>
 </div>
 
 <br />
