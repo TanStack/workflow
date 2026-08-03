@@ -1,3 +1,21 @@
+<div align="center">
+  <picture>
+    <source
+      media="(prefers-color-scheme: dark)"
+      srcset="https://tanstack.com/api/readme/workflow.png?theme=dark"
+    />
+    <source
+      media="(prefers-color-scheme: light)"
+      srcset="https://tanstack.com/api/readme/workflow.png"
+    />
+    <img
+      src="https://tanstack.com/api/readme/workflow.png"
+      alt="TanStack Workflow"
+      width="900"
+    />
+  </picture>
+</div>
+
 # TanStack Workflow
 
 Type-safe durable execution for TypeScript. Workflows are ordinary async functions that can pause, persist progress to an append-only log, and resume after approvals, webhooks, timers, or process restarts.
