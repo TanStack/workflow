@@ -239,8 +239,7 @@ describe('external cron scheduling', () => {
           }),
         )
         const out = events.find((e) => e.type === 'RUN_FINISHED') as
-          | { output: { summary: string } }
-          | undefined
+          { output: { summary: string } } | undefined
         if (out) completedSummaries.push(out.output.summary)
       })()
       inFlight = promise.finally(async () => {

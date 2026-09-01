@@ -508,11 +508,7 @@ export interface SignalDelivery<TPayload = unknown> {
 // ============================================================
 
 export type RunStatus =
-  | 'running'
-  | 'paused'
-  | 'finished'
-  | 'errored'
-  | 'aborted'
+  'running' | 'paused' | 'finished' | 'errored' | 'aborted'
 
 export type RunAwaitable =
   | {
