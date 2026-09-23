@@ -5,7 +5,7 @@ title: StepOptions
 
 # Interface: StepOptions
 
-Defined in: [packages/workflow-core/src/types.ts:247](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L247)
+Defined in: [packages/workflow-core/src/types.ts:271](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L271)
 
 ## Properties
 
@@ -15,7 +15,7 @@ Defined in: [packages/workflow-core/src/types.ts:247](https://github.com/TanStac
 optional meta: WorkflowMetadata;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:249](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L249)
+Defined in: [packages/workflow-core/src/types.ts:273](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L273)
 
 Free-form host/UI metadata copied into STEP_* log events.
 
@@ -27,7 +27,7 @@ Free-form host/UI metadata copied into STEP_* log events.
 optional retry: StepRetryOptions;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:250](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L250)
+Defined in: [packages/workflow-core/src/types.ts:274](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L274)
 
 ***
 
@@ -37,6 +37,6 @@ Defined in: [packages/workflow-core/src/types.ts:250](https://github.com/TanStac
 optional timeout: number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:252](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L252)
+Defined in: [packages/workflow-core/src/types.ts:276](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L276)
 
 Per-attempt timeout in ms.

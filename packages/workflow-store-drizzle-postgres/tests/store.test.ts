@@ -12,6 +12,7 @@ import {
 import { runWorkflowExecutionStoreContractTests } from '../../workflow-runtime/tests/contracts/workflow-execution-store.contract'
 
 runWorkflowExecutionStoreContractTests({
+  durability: true,
   name: 'drizzle-postgres',
   createStore: async () => {
     const db = drizzle(new PGlite())
@@ -28,7 +29,13 @@ describe('drizzle-postgres schema contract', () => {
     )
     const migrationSql = await readFile(migrationFile, 'utf8')
 
-    expect(getDrizzlePostgresWorkflowStoreMigrationSql()).toBe(migrationSql)
+    const inboxSql = await readFile(
+      new URL('../migrations/0001_signal_inbox.sql', import.meta.url),
+      'utf8',
+    )
+    expect(getDrizzlePostgresWorkflowStoreMigrationSql()).toBe(
+      `${migrationSql}\n${inboxSql}`,
+    )
     expect(getDrizzlePostgresWorkflowStoreMigrations()).toEqual([
       {
         id: '0000_workflow_store',
@@ -37,7 +44,50 @@ describe('drizzle-postgres schema contract', () => {
         statements: expect.any(Array),
         sql: migrationSql,
       },
+      {
+        id: '0001_signal_inbox',
+        name: 'Add durable signal inbox',
+        order: 1,
+        statements: expect.any(Array),
+        sql: inboxSql,
+      },
     ])
+  })
+
+  test('upgrades the initial schema without changing existing state or history', async () => {
+    const client = new PGlite()
+    const migrations = getDrizzlePostgresWorkflowStoreMigrations()
+    await client.exec(migrations[0]!.sql)
+    const store = createDrizzlePostgresWorkflowStore({ db: drizzle(client) })
+    await store.createRun({
+      runId: 'legacy',
+      workflowId: 'flow',
+      input: { value: 1 },
+      now: 1,
+    })
+    await store.appendEvents({
+      runId: 'legacy',
+      expectedNextIndex: 0,
+      events: [
+        { type: 'STEP_FINISHED', ts: 1, stepId: 'old-step', result: 42 },
+      ],
+    })
+    await client.exec(migrations[1]!.sql)
+    await store.ensureSchema()
+    expect((await store.loadRun('legacy'))?.input).toEqual({ value: 1 })
+    expect(
+      (await store.readEvents({ runId: 'legacy' }))[0]?.event,
+    ).toMatchObject({ result: 42 })
+    expect(
+      (
+        await store.bufferSignal!({
+          runId: 'legacy',
+          delivery: { signalId: 'new', name: 'ready', payload: 1 },
+          now: 2,
+        })
+      ).kind,
+    ).toBe('buffered')
+    await client.close()
   })
 
   test('can generate schema-qualified custom table migrations', () => {
@@ -73,6 +123,10 @@ describe('drizzle-postgres schema contract', () => {
     )
 
     expect(result.rows).toEqual([
+      {
+        migration_id: '0000_workflow_store',
+        package_name: '@tanstack/workflow-store-drizzle-postgres',
+      },
       {
         migration_id: drizzlePostgresWorkflowStoreSchemaVersion,
         package_name: '@tanstack/workflow-store-drizzle-postgres',

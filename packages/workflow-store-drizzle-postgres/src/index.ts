@@ -18,6 +18,7 @@ export {
   workflowSchedules,
   workflowSchemaMigrations,
   workflowSignalDeliveries,
+  workflowSignalInbox,
   workflowTimers,
 } from './tables'
 export type {

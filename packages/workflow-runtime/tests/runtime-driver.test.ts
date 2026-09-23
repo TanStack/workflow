@@ -863,12 +863,12 @@ describe('workflow runtime driver', () => {
       await vi.advanceTimersByTimeAsync(30)
       expect(heartbeat).toHaveBeenCalledWith({
         runId: 'heartbeat:1',
-        leaseOwner: 'worker-a',
+        leaseOwner: expect.stringMatching(/^worker-a:/),
         leaseMs: 90,
         now: 1_030,
       })
       expect(await store.loadRun('heartbeat:1')).toMatchObject({
-        lease: { owner: 'worker-a', expiresAt: 1_120 },
+        lease: { owner: expect.stringMatching(/^worker-a:/), expiresAt: 1_120 },
       })
       expect(
         (
@@ -892,6 +892,94 @@ describe('workflow runtime driver', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('stops new effects after a heartbeat failure and leaves the run recoverable', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+    try {
+      const store = inMemoryWorkflowExecutionStore()
+      const started = deferred<void>()
+      const release = deferred<void>()
+      let laterEffects = 0
+      const workflow = createWorkflow({ id: 'heartbeat-failure' }).handler(
+        async (ctx) => {
+          try {
+            await ctx.step('slow', async () => {
+              started.resolve()
+              await release.promise
+            })
+          } catch {
+            // Even a handler that catches persistence failures cannot start more effects.
+          }
+          return ctx.step('later', () => ++laterEffects)
+        },
+      )
+      const workflows = { 'heartbeat-failure': { load: async () => workflow } }
+      const failingStore = {
+        ...store,
+        heartbeatRunLease: async () => {
+          throw new Error('database unavailable')
+        },
+      }
+      const running = defineWorkflowRuntime({
+        store: failingStore,
+        workflows,
+      }).startRun({
+        workflowId: 'heartbeat-failure',
+        runId: 'heartbeat-failure:1',
+        input: {},
+        leaseMs: 90,
+      })
+      await started.promise
+      await vi.advanceTimersByTimeAsync(30)
+      const rejected = expect(running).rejects.toThrow('database unavailable')
+      release.resolve()
+      await rejected
+      expect(laterEffects).toBe(0)
+      expect((await store.loadRun('heartbeat-failure:1'))?.status).toBe(
+        'running',
+      )
+      const recovered = await defineWorkflowRuntime({
+        store,
+        workflows,
+      }).sweep()
+      expect(recovered.recovered[0]?.kind).toBe('completed')
+      expect(laterEffects).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps legacy stores without optional durability methods working', async () => {
+    const store = {
+      ...inMemoryWorkflowExecutionStore(),
+      bufferSignal: undefined,
+      consumeBufferedSignal: undefined,
+      completeTimer: undefined,
+    }
+    const workflow = createWorkflow({ id: 'legacy-store' }).handler(
+      async (ctx) => {
+        await ctx.sleep(1)
+        return 42
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: { 'legacy-store': { load: async () => workflow } },
+    })
+    expect(
+      (
+        await runtime.startRun({
+          workflowId: 'legacy-store',
+          runId: 'legacy-store:1',
+          input: {},
+        })
+      ).kind,
+    ).toBe('paused')
+    expect(
+      (await runtime.sweep({ now: Date.now() + 1000 })).timers[0]?.run?.output,
+    ).toBe(42)
   })
 
   it('recovers stale running executions during sweep', async () => {

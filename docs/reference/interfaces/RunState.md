@@ -5,7 +5,7 @@ title: RunState
 
 # Interface: RunState\<TInput, TOutput\>
 
-Defined in: [packages/workflow-core/src/types.ts:513](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L513)
+Defined in: [packages/workflow-core/src/types.ts:572](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L572)
 
 Persisted run metadata. State is intentionally NOT stored here —
 it is reconstructed from `initialize(input)` + log replay on every
@@ -30,7 +30,7 @@ and audit a run.
 optional awaiting: readonly RunAwaitable[];
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:525](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L525)
+Defined in: [packages/workflow-core/src/types.ts:584](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L584)
 
 All currently outstanding waits. Current engine versions only
  create one awaitable at a time, but the persisted shape can
@@ -45,7 +45,7 @@ All currently outstanding waits. Current engine versions only
 createdAt: number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:541](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L541)
+Defined in: [packages/workflow-core/src/types.ts:600](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L600)
 
 ***
 
@@ -55,7 +55,7 @@ Defined in: [packages/workflow-core/src/types.ts:541](https://github.com/TanStac
 optional error: SerializedError;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:520](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L520)
+Defined in: [packages/workflow-core/src/types.ts:579](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L579)
 
 ***
 
@@ -65,7 +65,7 @@ Defined in: [packages/workflow-core/src/types.ts:520](https://github.com/TanStac
 input: TInput;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:518](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L518)
+Defined in: [packages/workflow-core/src/types.ts:577](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L577)
 
 ***
 
@@ -75,7 +75,7 @@ Defined in: [packages/workflow-core/src/types.ts:518](https://github.com/TanStac
 optional output: TOutput;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:519](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L519)
+Defined in: [packages/workflow-core/src/types.ts:578](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L578)
 
 ***
 
@@ -85,7 +85,7 @@ Defined in: [packages/workflow-core/src/types.ts:519](https://github.com/TanStac
 optional pendingApproval: object;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:534](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L534)
+Defined in: [packages/workflow-core/src/types.ts:593](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L593)
 
 Set when the run is paused awaiting an approval.
 
@@ -127,7 +127,7 @@ title: string;
 runId: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:514](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L514)
+Defined in: [packages/workflow-core/src/types.ts:573](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L573)
 
 ***
 
@@ -137,7 +137,7 @@ Defined in: [packages/workflow-core/src/types.ts:514](https://github.com/TanStac
 status: RunStatus;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:515](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L515)
+Defined in: [packages/workflow-core/src/types.ts:574](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L574)
 
 ***
 
@@ -147,7 +147,7 @@ Defined in: [packages/workflow-core/src/types.ts:515](https://github.com/TanStac
 updatedAt: number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:542](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L542)
+Defined in: [packages/workflow-core/src/types.ts:601](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L601)
 
 ***
 
@@ -157,7 +157,7 @@ Defined in: [packages/workflow-core/src/types.ts:542](https://github.com/TanStac
 optional waitingFor: object;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:527](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L527)
+Defined in: [packages/workflow-core/src/types.ts:586](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L586)
 
 Set when the run is paused awaiting an external signal.
 
@@ -193,7 +193,7 @@ optional stepId: string;
 workflowId: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:516](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L516)
+Defined in: [packages/workflow-core/src/types.ts:575](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L575)
 
 ***
 
@@ -203,4 +203,4 @@ Defined in: [packages/workflow-core/src/types.ts:516](https://github.com/TanStac
 optional workflowVersion: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:517](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L517)
+Defined in: [packages/workflow-core/src/types.ts:576](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L576)

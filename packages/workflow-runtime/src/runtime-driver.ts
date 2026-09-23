@@ -29,6 +29,14 @@ const DEFAULT_MIN_YIELD_REMAINING_MS = 1_000
 export function createRuntimeDriver<
   TWorkflows extends Record<string, WorkflowRegistration>,
 >(config: WorkflowRuntimeConfig<TWorkflows>) {
+  if (
+    config.bufferSignals &&
+    (!config.store.bufferSignal || !config.store.consumeBufferedSignal)
+  ) {
+    throw new Error(
+      'bufferSignals requires a store with durable signal inbox support.',
+    )
+  }
   const telemetry = createWorkflowTelemetry(
     config.telemetry,
     '@tanstack/workflow-runtime',
@@ -218,6 +226,43 @@ async function deliverSignal<
         name: args.name,
         payload: args.payload,
         meta: args.meta,
+      }
+      if (config.bufferSignals) {
+        const buffered = await config.store.bufferSignal!({
+          runId: args.runId,
+          delivery,
+          now,
+        })
+        if (
+          buffered.kind !== 'buffered' ||
+          buffered.run.status !== 'paused' ||
+          buffered.run.waitingFor?.signalName !== args.name
+        ) {
+          return {
+            kind: buffered.kind,
+            runId: args.runId,
+            run: 'run' in buffered ? buffered.run : undefined,
+            events: [],
+            eventCount: 0,
+          }
+        }
+        const workflow = await loadWorkflow(config, buffered.run.workflowId)
+        return driveClaimedRun(config, telemetry, {
+          workflow,
+          workflowId: buffered.run.workflowId,
+          runId: args.runId,
+          recover: true,
+          now,
+          leaseOwner: args.leaseOwner,
+          leaseMs,
+          threadId: args.threadId,
+          includeEvents: args.includeEvents,
+          maxEvents: args.maxEvents,
+          deadline,
+          minYieldRemainingMs,
+          yieldResumeAt: now + 1,
+          publish: args.publish,
+        })
       }
       const delivered = await traceStoreOperation(
         telemetry,
@@ -413,7 +458,7 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
         DEFAULT_SWEEP_LIMIT,
         'maxRecoveredRuns',
       )
-      const leaseOwner = args.leaseOwner ?? createLeaseOwner(`sweep:${now}`)
+      const leaseOwner = createLeaseOwner(args.leaseOwner ?? `sweep:${now}`)
       span.setAttribute('tanstack.workflow.lease_owner', leaseOwner)
       const leaseMs = resolveLeaseMs(config, args.leaseMs)
       const recovered: Array<WorkflowRuntimeRunResult> = []
@@ -478,8 +523,20 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
             workflow,
             workflowId: claim.run.workflowId,
             runId: claim.run.runId,
+            claimedRun: claim.run,
             input: claim.run.input,
             recover: runState !== undefined,
+            signalDelivery:
+              runState?.waitingFor?.signalName === '__timer' &&
+              runState.waitingFor.deadline !== undefined &&
+              runState.waitingFor.deadline <= now
+                ? {
+                    name: '__timer',
+                    payload: undefined,
+                    stepId: runState.waitingFor.stepId,
+                    signalId: `timer:${claim.run.runId}:${runState.waitingFor.stepId}:${runState.waitingFor.deadline}`,
+                  }
+                : undefined,
             now,
             leaseOwner,
             leaseMs,
@@ -625,6 +682,50 @@ async function deliverTimer<
     publish?: WorkflowRuntimeEventPublisher
   },
 ) {
+  if (config.store.completeTimer) {
+    const run = await config.store.loadRun(args.timer.runId)
+    const state = await config.store.loadRunState(args.timer.runId)
+    const wait = state?.waitingFor
+    const matches =
+      wait?.signalName === '__timer' &&
+      wait.deadline === args.timer.wakeAt &&
+      (!args.timer.signalId.startsWith(`timer:${args.timer.runId}:`) ||
+        args.timer.signalId ===
+          `timer:${args.timer.runId}:${wait.stepId}:${wait.deadline}`)
+    if (
+      !run ||
+      !matches ||
+      ['finished', 'errored', 'aborted'].includes(run.status)
+    ) {
+      await config.store.completeTimer(args.timer)
+      return run
+        ? resultFromRunSnapshot(run)
+        : {
+            kind: 'not-found' as const,
+            runId: args.timer.runId,
+            events: [],
+            eventCount: 0,
+          }
+    }
+    const workflow = await loadWorkflow(config, run.workflowId)
+    const result = await driveClaimedRun(config, telemetry, {
+      ...args,
+      workflow,
+      workflowId: run.workflowId,
+      runId: run.runId,
+      recover: true,
+      signalDelivery: {
+        signalId: args.timer.signalId,
+        stepId: wait.stepId,
+        name: '__timer',
+        payload: undefined,
+      },
+    })
+    if (result.kind !== 'not-claimable' && result.kind !== 'running') {
+      await config.store.completeTimer(args.timer)
+    }
+    return result
+  }
   return deliverSignalFromRuntime(config, telemetry, {
     runId: args.timer.runId,
     signalId: args.timer.signalId,
@@ -654,6 +755,7 @@ async function driveClaimedRun<
     input?: unknown
     signalDelivery?: Parameters<typeof runWorkflow>[0]['signalDelivery']
     approval?: Parameters<typeof runWorkflow>[0]['approval']
+    claimedRun?: WorkflowExecution
     recover?: boolean
     now: number
     leaseOwner?: string
@@ -677,7 +779,8 @@ async function driveClaimedRun<
     },
     async (span) => {
       const leaseOwner =
-        args.leaseOwner ?? createLeaseOwner(`runtime:${args.runId}`)
+        args.claimedRun?.lease?.owner ??
+        createLeaseOwner(args.leaseOwner ?? `runtime:${args.runId}`)
       const leaseMs = resolveLeaseMs(config, args.leaseMs)
       span.setAttribute('tanstack.workflow.lease_owner', leaseOwner)
       const claim = await traceStoreOperation(
@@ -720,13 +823,33 @@ async function driveClaimedRun<
         }
       }
 
-      const runStore = createRunStoreAdapter(config.store, telemetry)
-      const heartbeat = startLeaseHeartbeat(config, telemetry, {
-        workflowId: args.workflowId,
-        workflowVersion: args.workflow.version,
-        runId: args.runId,
+      const abortController = new AbortController()
+      let persistenceFailed = false
+      let persistenceError: unknown
+      const onPersistenceError = (error: unknown) => {
+        persistenceFailed = true
+        persistenceError = error
+        abortController.abort()
+      }
+      const assertHealthy = () => {
+        if (persistenceFailed) throw persistenceError
+      }
+      const heartbeat = startLeaseHeartbeat(
+        config,
+        telemetry,
+        {
+          workflowId: args.workflowId,
+          workflowVersion: args.workflow.version,
+          runId: args.runId,
+          leaseOwner,
+          leaseMs,
+        },
+        onPersistenceError,
+      )
+      const runStore = createRunStoreAdapter(config.store, telemetry, {
         leaseOwner,
-        leaseMs,
+        onError: onPersistenceError,
+        assertHealthy,
       })
       let heartbeatError: unknown
       const collected = await (async () => {
@@ -735,6 +858,7 @@ async function driveClaimedRun<
             runWorkflow({
               workflow: args.workflow,
               runStore,
+              signal: abortController.signal,
               runId: args.runId,
               input: args.input,
               signalDelivery: args.signalDelivery,
@@ -753,12 +877,14 @@ async function driveClaimedRun<
             },
           )
 
+          assertHealthy()
           await syncTimerFromRunState(
             config,
             telemetry,
             args.runId,
             args.workflowId,
             args.now,
+            leaseOwner,
           )
           return events
         } finally {
@@ -820,6 +946,7 @@ async function syncTimerFromRunState<
   runId: string,
   workflowId: string,
   now: number,
+  leaseOwner: string,
 ) {
   const state = await traceStoreOperation(
     telemetry,
@@ -844,6 +971,7 @@ async function syncTimerFromRunState<
     () =>
       config.store.scheduleTimer({
         runId,
+        leaseOwner,
         workflowId,
         workflowVersion: state.workflowVersion,
         wakeAt: deadline,
@@ -1081,6 +1209,7 @@ function startLeaseHeartbeat<
     leaseOwner: string
     leaseMs: number
   },
+  onFailure: (error: unknown) => void,
 ) {
   const intervalMs = Math.max(1, Math.floor(args.leaseMs / 3))
   let stopped = false
@@ -1118,9 +1247,17 @@ function startLeaseHeartbeat<
               now: Date.now(),
             }),
         )
-        failure = undefined
+        const current = await config.store.loadRun(args.runId)
+        if (
+          current?.lease?.owner !== args.leaseOwner ||
+          current.lease.expiresAt <= Date.now()
+        ) {
+          throw new Error('Workflow run lease lost.')
+        }
       } catch (error) {
         failure = error
+        onFailure(error)
+        break
       }
     }
   })()

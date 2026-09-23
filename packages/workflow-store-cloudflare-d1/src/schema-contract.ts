@@ -5,6 +5,7 @@ export interface CloudflareD1WorkflowStoreTables {
   eventLocks: string
   events: string
   timers: string
+  signalInbox: string
   signalDeliveries: string
   schedules: string
   scheduleBuckets: string
@@ -22,6 +23,7 @@ export const defaultCloudflareD1WorkflowStoreTables: CloudflareD1WorkflowStoreTa
     eventLocks: 'workflow_event_locks',
     events: 'workflow_events',
     timers: 'workflow_timers',
+    signalInbox: 'workflow_signal_inbox',
     signalDeliveries: 'workflow_signal_deliveries',
     schedules: 'workflow_schedules',
     scheduleBuckets: 'workflow_schedule_buckets',
@@ -36,7 +38,7 @@ export function resolveCloudflareD1WorkflowStoreTables(
   }
 }
 
-export function getCloudflareD1WorkflowStoreSchemaStatements(
+export function getCloudflareD1WorkflowStoreInitialSchemaStatements(
   options: CloudflareD1WorkflowStoreSchemaOptions = {},
 ): Array<string> {
   const tables = resolveCloudflareD1WorkflowStoreTables(options.tables)
@@ -184,4 +186,42 @@ function normalizeSqlStatement(statement: string) {
       index === 0 ? line.trimEnd() : line.replace(/^ {4}/, '').trimEnd(),
     )
     .join('\n')
+}
+
+export function getCloudflareD1WorkflowStoreSchemaStatements(
+  options: CloudflareD1WorkflowStoreSchemaOptions = {},
+): Array<string> {
+  return [
+    ...getCloudflareD1WorkflowStoreInitialSchemaStatements(options),
+    ...getCloudflareD1WorkflowStoreInboxSchemaStatements(options),
+  ]
+}
+
+export function getCloudflareD1WorkflowStoreInboxSchemaStatements(
+  options: CloudflareD1WorkflowStoreSchemaOptions = {},
+): Array<string> {
+  const tables = resolveCloudflareD1WorkflowStoreTables(options.tables)
+  const inbox = quoteIdent(tables.signalInbox)
+  const events = quoteIdent(tables.events)
+  const migrations = quoteIdent(tables.schemaMigrations)
+  return [
+    `create table if not exists ${inbox} (
+      sequence integer primary key autoincrement,
+      run_id text not null,
+      signal_id text not null,
+      name text not null,
+      step_id text,
+      delivery text not null,
+      created_at integer not null,
+      unique (run_id, signal_id)
+    )`,
+    `create index if not exists ${quoteIdent(`${tables.signalInbox}_pending_idx`)}
+      on ${inbox} (run_id, name, sequence)`,
+    `create index if not exists ${quoteIdent(`${tables.events}_signal_id_idx`)}
+      on ${events} (run_id, json_extract(event, '$.signalId'))
+      where event_type = 'SIGNAL_RESOLVED'`,
+    `insert into ${migrations} (migration_id, package_name, package_version, applied_at)
+      values ('0001_signal_inbox', '@tanstack/workflow-store-cloudflare-d1', null, cast(unixepoch('subsec') * 1000 as integer))
+      on conflict (migration_id) do nothing`,
+  ].map(normalizeSqlStatement)
 }

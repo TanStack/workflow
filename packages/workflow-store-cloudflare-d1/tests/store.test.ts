@@ -15,6 +15,7 @@ import type {
 } from '../src'
 
 runWorkflowExecutionStoreContractTests({
+  durability: true,
   name: 'cloudflare-d1',
   createStore: async () => {
     const db = createTestD1Database()
@@ -31,7 +32,13 @@ describe('cloudflare-d1 schema contract', () => {
     )
     const migrationSql = await readFile(migrationFile, 'utf8')
 
-    expect(getCloudflareD1WorkflowStoreMigrationSql()).toBe(migrationSql)
+    const inboxSql = await readFile(
+      new URL('../migrations/0001_signal_inbox.sql', import.meta.url),
+      'utf8',
+    )
+    expect(getCloudflareD1WorkflowStoreMigrationSql()).toBe(
+      `${migrationSql}\n${inboxSql}`,
+    )
     expect(getCloudflareD1WorkflowStoreMigrations()).toEqual([
       {
         id: '0000_workflow_store',
@@ -40,7 +47,49 @@ describe('cloudflare-d1 schema contract', () => {
         statements: expect.any(Array),
         sql: migrationSql,
       },
+      {
+        id: '0001_signal_inbox',
+        name: 'Add durable signal inbox',
+        order: 1,
+        statements: expect.any(Array),
+        sql: inboxSql,
+      },
     ])
+  })
+
+  test('upgrades the initial schema without changing existing state or history', async () => {
+    const db = createTestD1Database()
+    const migrations = getCloudflareD1WorkflowStoreMigrations()
+    await db.exec!(migrations[0]!.sql)
+    const store = createCloudflareD1WorkflowStore({ db })
+    await store.createRun({
+      runId: 'legacy',
+      workflowId: 'flow',
+      input: { value: 1 },
+      now: 1,
+    })
+    await store.appendEvents({
+      runId: 'legacy',
+      expectedNextIndex: 0,
+      events: [
+        { type: 'STEP_FINISHED', ts: 1, stepId: 'old-step', result: 42 },
+      ],
+    })
+    await db.exec!(migrations[1]!.sql)
+    await store.ensureSchema()
+    expect((await store.loadRun('legacy'))?.input).toEqual({ value: 1 })
+    expect(
+      (await store.readEvents({ runId: 'legacy' }))[0]?.event,
+    ).toMatchObject({ result: 42 })
+    expect(
+      (
+        await store.bufferSignal!({
+          runId: 'legacy',
+          delivery: { signalId: 'new', name: 'ready', payload: 1 },
+          now: 2,
+        })
+      ).kind,
+    ).toBe('buffered')
   })
 
   test('can generate custom table migrations', () => {
@@ -70,6 +119,10 @@ describe('cloudflare-d1 schema contract', () => {
       .all<{ migration_id: string; package_name: string }>()
 
     expect(rows.results).toEqual([
+      {
+        migration_id: '0000_workflow_store',
+        package_name: '@tanstack/workflow-store-cloudflare-d1',
+      },
       {
         migration_id: cloudflareD1WorkflowStoreSchemaVersion,
         package_name: '@tanstack/workflow-store-cloudflare-d1',

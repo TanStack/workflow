@@ -472,6 +472,12 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
     prevStateSnapshot: snapshotState(state),
     state,
     paused: false,
+    compensations: [],
+    applicationStepIds: new Set(),
+    compensationError: history.find(
+      (event) => event.type === 'COMPENSATION_STARTED',
+    )?.error,
+    compensating: false,
   }
 
   const baseCtx: BaseCtx<unknown, Record<string, unknown>> = {
@@ -486,6 +492,7 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
       yield: (opts) => engineYield(engine, opts),
     },
 
+    compensate: (id, fn, opts) => registerCompensation(engine, id, fn, opts),
     step: (id, fn, opts) => engineStep(engine, id, fn, opts),
     sleep: (ms, opts) => engineSleep(engine, ms, opts),
     sleepUntil: (ts, opts) => engineSleepUntil(engine, ts, opts),
@@ -520,6 +527,7 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
     // A handler can accidentally catch the internal pause sentinel. The pause
     // was already persisted, so it must still win over a normal handler return.
     if (engine.paused) return
+    if (engine.compensationError) throw rehydrateError(engine.compensationError)
     output = validateWorkflowOutput(workflow, output)
     // Flush any final state delta.
     flushStateDelta(engine)
@@ -555,15 +563,51 @@ async function driveHandler(args: DriveHandlerArgs): Promise<void> {
       return
     }
 
+    let terminalError = err
+    if (engine.compensations.length > 0) {
+      if (!engine.compensationError) {
+        engine.compensationError = serializeError(terminalError)
+        await emitAndAppend(runStore, runId, engine.nextLogIndex++, emit, {
+          type: 'COMPENSATION_STARTED',
+          ts: Date.now(),
+          error: engine.compensationError,
+        })
+      }
+      engine.compensating = true
+      try {
+        for (const compensation of [...engine.compensations].reverse()) {
+          await engineStep(
+            engine,
+            `__compensation:${compensation.id}`,
+            compensation.fn,
+            {
+              ...compensation.options,
+              retry: {
+                maxAttempts: 1,
+                ...compensation.options?.retry,
+                durable: true,
+              },
+            },
+          )
+        }
+        terminalError = rehydrateError(engine.compensationError)
+      } catch (compensationError) {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- compensation can pause while awaited
+        if (engine.paused) return
+        terminalError = new Error(
+          `Compensation failed: ${serializeError(compensationError).message}. Original failure: ${engine.compensationError.message}`,
+        )
+      }
+    }
     args.runState.status = 'errored'
-    args.runState.error = serializeError(err)
+    args.runState.error = serializeError(terminalError)
     args.runState.updatedAt = Date.now()
     await runStore.setRunState(runId, args.runState)
     const errEvent: WorkflowEvent = {
       type: 'RUN_ERRORED',
       ts: Date.now(),
       runId,
-      error: serializeError(err),
+      error: serializeError(terminalError),
       code: 'error',
     }
     await emitAndAppend(runStore, runId, engine.nextLogIndex++, emit, errEvent)
@@ -631,6 +675,14 @@ interface EngineRuntime {
   /** Set to `true` by the primitive that paused the run, so the
    *  outer catch knows not to write a terminal event. */
   paused: boolean
+  compensations: Array<{
+    id: string
+    fn: (ctx: StepContext) => unknown | Promise<unknown>
+    options?: StepOptions
+  }>
+  applicationStepIds: Set<string>
+  compensationError?: SerializedError
+  compensating: boolean
 }
 
 function timeRemaining(engine: EngineRuntime): number {
@@ -671,12 +723,59 @@ async function yieldForDeadlineIfNeeded(engine: EngineRuntime): Promise<void> {
 // Primitives — replay-aware durable steps
 // ============================================================
 
+async function registerCompensation(
+  engine: EngineRuntime,
+  id: string,
+  fn: (ctx: StepContext) => unknown | Promise<unknown>,
+  options?: StepOptions,
+) {
+  if (
+    [...engine.applicationStepIds].some((stepId) =>
+      stepId.startsWith('__compensation:'),
+    )
+  ) {
+    throw new Error(
+      'Application steps cannot use the __compensation: namespace when registering compensation.',
+    )
+  }
+  if (engine.compensations.some((entry) => entry.id === id)) {
+    throw new Error(`Duplicate compensation id "${id}".`)
+  }
+  const registered = findCheckpoint(
+    engine,
+    (event) => event.type === 'COMPENSATION_REGISTERED' && event.stepId === id,
+  )
+  if (!registered) {
+    if (engine.compensationError) throw rehydrateError(engine.compensationError)
+    await emitAndAppend(
+      engine.runStore,
+      engine.runId,
+      engine.nextLogIndex++,
+      engine.emit,
+      {
+        type: 'COMPENSATION_REGISTERED',
+        ts: Date.now(),
+        stepId: id,
+      },
+    )
+  }
+  engine.compensations.push({ id, fn, options })
+}
+
 async function engineStep<T>(
   engine: EngineRuntime,
   stepId: string,
   fn: (ctx: StepContext) => T | Promise<T>,
   options?: StepOptions,
 ): Promise<T> {
+  if (!engine.compensating) {
+    if (engine.compensations.length && stepId.startsWith('__compensation:')) {
+      throw new Error(
+        'Application steps cannot use the __compensation: namespace when registering compensation.',
+      )
+    }
+    engine.applicationStepIds.add(stepId)
+  }
   flushStateDelta(engine)
 
   // Replay short-circuit: a STEP_FINISHED or STEP_FAILED already
@@ -707,6 +806,10 @@ async function engineStep<T>(
     return event.result as T
   }
 
+  if (engine.compensationError && !engine.compensating) {
+    throw rehydrateError(engine.compensationError)
+  }
+  engine.runStore.assertHealthy?.()
   await yieldForDeadlineIfNeeded(engine)
 
   // Fresh execution.
@@ -728,18 +831,53 @@ async function engineStep<T>(
     async (span) => {
       const retryPolicy = options?.retry ?? engine.workflow.defaultStepRetry
       const maxAttempts = Math.max(1, retryPolicy?.maxAttempts ?? 1)
+      const pendingRetry = retryPolicy?.durable
+        ? ([...engine.history]
+            .reverse()
+            .find(
+              (event) =>
+                event.type === 'STEP_RETRY_SCHEDULED' &&
+                event.stepId === stepId,
+            ) as
+            | Extract<WorkflowEvent, { type: 'STEP_RETRY_SCHEDULED' }>
+            | undefined)
+        : undefined
       const attempts: Array<{
         startedAt: number
         finishedAt: number
         result?: unknown
         error?: SerializedError
-      }> = []
+      }> = pendingRetry ? [...pendingRetry.attempts] : []
+      if (pendingRetry) {
+        await engineSleepUntil(engine, pendingRetry.nextAttemptAt, {
+          id: `__retry:${stepId}:${pendingRetry.attempt}`,
+        })
+      }
       let lastError: unknown
       let result: unknown
       let succeeded = false
 
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      for (
+        let attempt = (pendingRetry?.attempt ?? 0) + 1;
+        attempt <= maxAttempts;
+        attempt++
+      ) {
+        engine.runStore.assertHealthy?.()
         const attemptStart = Date.now()
+        if (retryPolicy?.durable) {
+          await emitAndAppend(
+            engine.runStore,
+            engine.runId,
+            engine.nextLogIndex++,
+            engine.emit,
+            {
+              type: 'STEP_ATTEMPT_STARTED',
+              ts: attemptStart,
+              stepId,
+              attempt,
+            },
+          )
+        }
         span.addEvent('workflow.step.attempt.started', { attempt })
         const attemptController = new AbortController()
         // Eager propagation: addEventListener doesn't fire for already-
@@ -823,6 +961,32 @@ async function engineStep<T>(
             (retryPolicy?.shouldRetry?.(err, attempt) ?? true)
           if (!shouldRetry) break
           const delayMs = computeBackoffMs(retryPolicy, attempt)
+          if (retryPolicy?.durable) {
+            if (!Number.isFinite(delayMs) || delayMs < 0) {
+              throw new Error(
+                'Durable retry delay must be a non-negative finite number.',
+              )
+            }
+            const nextAttemptAt = Date.now() + Math.max(0, delayMs)
+            await emitAndAppend(
+              engine.runStore,
+              engine.runId,
+              engine.nextLogIndex++,
+              engine.emit,
+              {
+                type: 'STEP_RETRY_SCHEDULED',
+                ts: Date.now(),
+                stepId,
+                attempt,
+                nextAttemptAt,
+                error: serializeError(err),
+                attempts,
+              },
+            )
+            await engineSleepUntil(engine, nextAttemptAt, {
+              id: `__retry:${stepId}:${attempt}`,
+            })
+          }
           if (delayMs > 0) {
             await new Promise<void>((resolve) => {
               const t = setTimeout(resolve, delayMs)
@@ -922,6 +1086,27 @@ async function engineWaitForEvent<TPayload>(
       return validated.value
     }
     return payload
+  }
+
+  if (engine.compensationError && !engine.compensating) {
+    throw rehydrateError(engine.compensationError)
+  }
+
+  if (name !== '__timer' && engine.runStore.consumeBufferedSignal) {
+    const resolved = await engine.runStore.consumeBufferedSignal({
+      runId: engine.runId,
+      name,
+      stepId,
+      expectedNextIndex: engine.nextLogIndex,
+      now: Date.now(),
+    })
+    if (resolved) {
+      engine.nextLogIndex++
+      engine.emit(resolved)
+      // Use the same schema validation and checkpoint handling as normal delivery.
+      engine.history = [...engine.history, resolved]
+      return engineWaitForEvent(engine, name, { ...options, id: stepId })
+    }
   }
 
   // Not yet resolved — pause the run.
@@ -1157,6 +1342,7 @@ const reservedCtxFields = new Set([
   'signal',
   'runtime',
   'step',
+  'compensate',
   'sleep',
   'sleepUntil',
   'waitForEvent',

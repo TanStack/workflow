@@ -12,24 +12,42 @@ import type {
 export function createRunStoreAdapter(
   store: WorkflowRunStoreAdapterStore,
   telemetry?: WorkflowTelemetry,
+  options: {
+    leaseOwner?: string
+    onError?: (error: unknown) => void
+    assertHealthy?: () => void
+  } = {},
 ): WorkflowRunStoreAdapter {
+  const { leaseOwner } = options
+  async function access<T>(operation: string, fn: () => Promise<T>) {
+    try {
+      options.assertHealthy?.()
+      return await traceStoreOperation(telemetry, operation, fn)
+    } catch (error) {
+      options.onError?.(error)
+      throw error
+    }
+  }
   return {
+    assertHealthy: options.assertHealthy,
+    consumeBufferedSignal: store.consumeBufferedSignal
+      ? (args) =>
+          access('store.consume_buffered_signal', () =>
+            store.consumeBufferedSignal!({ ...args, leaseOwner }),
+          )
+      : undefined,
     getRunState(runId) {
-      return traceStoreOperation(telemetry, 'store.load_run_state', () =>
-        store.loadRunState(runId),
-      )
+      return access('store.load_run_state', () => store.loadRunState(runId))
     },
 
     setRunState(_runId: string, state: RunState) {
-      return traceStoreOperation(telemetry, 'store.save_run_state', () =>
-        store.saveRunState({ state }),
+      return access('store.save_run_state', () =>
+        store.saveRunState({ state, leaseOwner }),
       )
     },
 
     deleteRun(runId: string, reason: DeleteReason) {
-      return traceStoreOperation(telemetry, 'store.delete_run', () =>
-        store.deleteRun(runId, reason),
-      )
+      return access('store.delete_run', () => store.deleteRun(runId, reason))
     },
 
     async appendEvent(
@@ -37,9 +55,10 @@ export function createRunStoreAdapter(
       expectedNextIndex: number,
       event: WorkflowEvent,
     ) {
-      await traceStoreOperation(telemetry, 'store.append_events', () =>
+      await access('store.append_events', () =>
         store.appendEvents({
           runId,
+          leaseOwner,
           expectedNextIndex,
           events: [event],
         }),
@@ -47,10 +66,8 @@ export function createRunStoreAdapter(
     },
 
     async getEvents(runId: string) {
-      const events = await traceStoreOperation(
-        telemetry,
-        'store.read_events',
-        () => store.readEvents({ runId }),
+      const events = await access('store.read_events', () =>
+        store.readEvents({ runId }),
       )
       return events.map((event) => event.event)
     },

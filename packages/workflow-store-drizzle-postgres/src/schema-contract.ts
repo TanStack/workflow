@@ -5,6 +5,7 @@ export interface DrizzlePostgresWorkflowStoreTables {
   eventLocks: string
   events: string
   timers: string
+  signalInbox: string
   signalDeliveries: string
   schedules: string
   scheduleBuckets: string
@@ -23,6 +24,7 @@ export const defaultDrizzlePostgresWorkflowStoreTables: DrizzlePostgresWorkflowS
     eventLocks: 'workflow_event_locks',
     events: 'workflow_events',
     timers: 'workflow_timers',
+    signalInbox: 'workflow_signal_inbox',
     signalDeliveries: 'workflow_signal_deliveries',
     schedules: 'workflow_schedules',
     scheduleBuckets: 'workflow_schedule_buckets',
@@ -37,7 +39,7 @@ export function resolveDrizzlePostgresWorkflowStoreTables(
   }
 }
 
-export function getDrizzlePostgresWorkflowStoreSchemaStatements(
+export function getDrizzlePostgresWorkflowStoreInitialSchemaStatements(
   options: DrizzlePostgresWorkflowStoreSchemaOptions = {},
 ): Array<string> {
   const tables = resolveDrizzlePostgresWorkflowStoreTables(options.tables)
@@ -205,4 +207,42 @@ function normalizeSqlStatement(statement: string) {
       index === 0 ? line.trimEnd() : line.replace(/^ {4}/, '').trimEnd(),
     )
     .join('\n')
+}
+
+export function getDrizzlePostgresWorkflowStoreSchemaStatements(
+  options: DrizzlePostgresWorkflowStoreSchemaOptions = {},
+): Array<string> {
+  return [
+    ...getDrizzlePostgresWorkflowStoreInitialSchemaStatements(options),
+    ...getDrizzlePostgresWorkflowStoreInboxSchemaStatements(options),
+  ]
+}
+
+export function getDrizzlePostgresWorkflowStoreInboxSchemaStatements(
+  options: DrizzlePostgresWorkflowStoreSchemaOptions = {},
+): Array<string> {
+  const tables = resolveDrizzlePostgresWorkflowStoreTables(options.tables)
+  const inbox = qualifiedTableName(options.schema, tables.signalInbox)
+  const events = qualifiedTableName(options.schema, tables.events)
+  const migrations = qualifiedTableName(options.schema, tables.schemaMigrations)
+  return [
+    `create table if not exists ${inbox} (
+      sequence bigserial primary key,
+      run_id text not null,
+      signal_id text not null,
+      name text not null,
+      step_id text,
+      delivery jsonb not null,
+      created_at bigint not null,
+      unique (run_id, signal_id)
+    )`,
+    `create index if not exists ${quoteIdent(`${tables.signalInbox}_pending_idx`)}
+      on ${inbox} (run_id, name, sequence)`,
+    `create index if not exists ${quoteIdent(`${tables.events}_signal_id_idx`)}
+      on ${events} (run_id, (event->>'signalId'))
+      where event_type = 'SIGNAL_RESOLVED'`,
+    `insert into ${migrations} (migration_id, package_name, package_version, applied_at)
+      values ('0001_signal_inbox', '@tanstack/workflow-store-drizzle-postgres', null, cast(extract(epoch from clock_timestamp()) * 1000 as bigint))
+      on conflict (migration_id) do nothing`,
+  ].map(normalizeSqlStatement)
 }

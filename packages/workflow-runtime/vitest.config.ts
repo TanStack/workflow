@@ -5,6 +5,8 @@ export default defineConfig({
   root: import.meta.dirname,
   resolve: {
     alias: {
+      '@tanstack/workflow-runtime': new URL('./src/index.ts', import.meta.url)
+        .pathname,
       '@tanstack/workflow-core': new URL(
         '../workflow-core/src/index.ts',
         import.meta.url,
