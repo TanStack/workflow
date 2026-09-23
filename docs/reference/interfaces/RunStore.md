@@ -5,7 +5,7 @@ title: RunStore
 
 # Interface: RunStore
 
-Defined in: [packages/workflow-core/src/types.ts:572](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L572)
+Defined in: [packages/workflow-core/src/types.ts:640](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L640)
 
 Pluggable backing store for workflow runs.
 
@@ -35,7 +35,7 @@ polling.
 appendEvent: (runId, expectedNextIndex, event) => Promise<void>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:582](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L582)
+Defined in: [packages/workflow-core/src/types.ts:659](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L659)
 
 Append `event` at `expectedNextIndex`. Throws `LogConflictError`
  if another writer has already committed at that index. Must be
@@ -61,13 +61,74 @@ Append `event` at `expectedNextIndex`. Throws `LogConflictError`
 
 ***
 
+### assertHealthy()?
+
+```ts
+optional assertHealthy: () => void;
+```
+
+Defined in: [packages/workflow-core/src/types.ts:642](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L642)
+
+Optional host guard before fresh effects, for example after lease loss.
+
+#### Returns
+
+`void`
+
+***
+
+### consumeBufferedSignal()?
+
+```ts
+optional consumeBufferedSignal: (args) => Promise<
+  | {
+  audience?: string;
+  meta?: WorkflowMetadata;
+  name: string;
+  payload: unknown;
+  signalId?: string;
+  stepId: string;
+  ts: number;
+  type: "SIGNAL_RESOLVED";
+}
+| undefined>;
+```
+
+Defined in: [packages/workflow-core/src/types.ts:646](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L646)
+
+Atomically append SIGNAL_RESOLVED for the oldest matching inbox entry.
+Keep the payload until run deletion, and never consume a signal twice.
+
+#### Parameters
+
+##### args
+
+[`ConsumeBufferedSignalArgs`](ConsumeBufferedSignalArgs.md)
+
+#### Returns
+
+`Promise`\<
+  \| \{
+  `audience?`: `string`;
+  `meta?`: [`WorkflowMetadata`](../type-aliases/WorkflowMetadata.md);
+  `name`: `string`;
+  `payload`: `unknown`;
+  `signalId?`: `string`;
+  `stepId`: `string`;
+  `ts`: `number`;
+  `type`: `"SIGNAL_RESOLVED"`;
+\}
+  \| `undefined`\>
+
+***
+
 ### deleteRun()
 
 ```ts
 deleteRun: (runId, reason) => Promise<void>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:576](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L576)
+Defined in: [packages/workflow-core/src/types.ts:653](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L653)
 
 #### Parameters
 
@@ -91,7 +152,7 @@ Defined in: [packages/workflow-core/src/types.ts:576](https://github.com/TanStac
 getEvents: (runId) => Promise<readonly WorkflowEvent[]>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:588](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L588)
+Defined in: [packages/workflow-core/src/types.ts:665](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L665)
 
 Read every event for `runId`, ordered by append position.
 
@@ -113,7 +174,7 @@ Read every event for `runId`, ordered by append position.
 getRunState: (runId) => Promise<RunState<unknown, unknown> | undefined>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:574](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L574)
+Defined in: [packages/workflow-core/src/types.ts:651](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L651)
 
 #### Parameters
 
@@ -133,7 +194,7 @@ Defined in: [packages/workflow-core/src/types.ts:574](https://github.com/TanStac
 setRunState: (runId, state) => Promise<void>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:575](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L575)
+Defined in: [packages/workflow-core/src/types.ts:652](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L652)
 
 #### Parameters
 
@@ -157,7 +218,7 @@ Defined in: [packages/workflow-core/src/types.ts:575](https://github.com/TanStac
 optional subscribe: (runId, fromIndex, onEvent) => () => void;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:594](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L594)
+Defined in: [packages/workflow-core/src/types.ts:671](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L671)
 
 Subscribe to new events for `runId`. Returns an unsubscribe
  function. Stores without push support omit this and callers

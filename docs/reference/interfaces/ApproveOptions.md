@@ -5,7 +5,7 @@ title: ApproveOptions
 
 # Interface: ApproveOptions
 
-Defined in: [packages/workflow-core/src/types.ts:283](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L283)
+Defined in: [packages/workflow-core/src/types.ts:329](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L329)
 
 ## Extends
 
@@ -19,7 +19,7 @@ Defined in: [packages/workflow-core/src/types.ts:283](https://github.com/TanStac
 optional description: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:285](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L285)
+Defined in: [packages/workflow-core/src/types.ts:331](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L331)
 
 ***
 
@@ -63,4 +63,4 @@ Free-form host/UI metadata copied into the operation's log event.
 title: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:284](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L284)
+Defined in: [packages/workflow-core/src/types.ts:330](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L330)

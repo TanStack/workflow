@@ -18,6 +18,7 @@ export type {
 } from '@tanstack/workflow-core'
 
 export type {
+  BufferSignalResult,
   AppendEventsArgs,
   AppendEventsResult,
   ClaimDueScheduleBucketsArgs,

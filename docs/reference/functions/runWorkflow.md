@@ -9,7 +9,7 @@ title: runWorkflow
 function runWorkflow(options): AsyncIterable<WorkflowEvent>;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:59](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L59)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:82](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L82)
 
 Drive a workflow to completion or pause. Returns an `AsyncIterable`
 of every event the engine appends to the run's log, in order.

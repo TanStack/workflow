@@ -3,6 +3,7 @@ import { LogConflictError } from '@tanstack/workflow-core'
 import type {
   DeleteReason,
   RunState,
+  SignalDelivery,
   WorkflowEvent,
 } from '@tanstack/workflow-core'
 import type {
@@ -75,6 +76,7 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
   const logs = new Map<RunId, Array<StoredWorkflowEvent>>()
   const timers = new Map<string, TimerRecord>()
   const signalDeliveries = new Map<string, true>()
+  const inbox = new Map<string, SignalDelivery>()
   const schedules = new Map<ScheduleId, ScheduleRecord>()
   const scheduleBuckets = new Map<string, ScheduleBucketRecord>()
   const subscribers = new Map<
@@ -100,6 +102,13 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
     const next = updater(cloneRun(existing))
     setRun(next)
     return cloneRun(next)
+  }
+
+  function assertLease(runId: string, owner?: string) {
+    if (owner === undefined) return
+    const current = runs.get(runId)?.lease
+    if (current?.owner !== owner || current.expiresAt <= Date.now())
+      throw new Error('Workflow run lease lost.')
   }
 
   return {
@@ -139,12 +148,68 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
     },
 
     async saveRunState(args: SaveRunStateArgs) {
+      assertLease(args.state.runId, args.leaseOwner)
       const state = cloneRunState(args.state)
       runStates.set(state.runId, state)
       setRun(executionFromRunState(state, runs.get(state.runId)?.lease))
     },
 
+    async bufferSignal(args) {
+      const run = getRun(args.runId)
+      if (!run) return { kind: 'not-found' }
+      const key = signalKey(args.runId, args.delivery.signalId)
+      if (
+        inbox.has(key) ||
+        signalDeliveries.has(signalKey(args.runId, args.delivery.signalId))
+      )
+        return { kind: 'duplicate', run }
+      if (isTerminal(run.status) || args.delivery.name === '__timer')
+        return { kind: 'not-waiting', run }
+      inbox.set(key, structuredClone(args.delivery))
+      return { kind: 'buffered', run }
+    },
+
+    async consumeBufferedSignal(args) {
+      assertLease(args.runId, args.leaseOwner)
+      const log = logs.get(args.runId) ?? []
+      if (log.length !== args.expectedNextIndex)
+        throw new LogConflictError(args.runId, args.expectedNextIndex)
+      for (const [key, delivery] of inbox) {
+        if (key !== signalKey(args.runId, delivery.signalId)) continue
+        if (
+          delivery.name !== args.name ||
+          (delivery.stepId !== undefined && delivery.stepId !== args.stepId)
+        )
+          continue
+        if (
+          log.some(
+            ({ event }) =>
+              event.type === 'SIGNAL_RESOLVED' &&
+              event.signalId === delivery.signalId,
+          )
+        )
+          continue
+        const event: Extract<WorkflowEvent, { type: 'SIGNAL_RESOLVED' }> = {
+          type: 'SIGNAL_RESOLVED',
+          ts: args.now,
+          stepId: args.stepId,
+          name: delivery.name,
+          signalId: delivery.signalId,
+          payload: delivery.payload,
+          meta: delivery.meta,
+        }
+        log.push(storeEvent(args.runId, log.length, event))
+        logs.set(args.runId, log)
+        publish(subscribers, args.runId, event, log.length - 1)
+        return structuredClone(event)
+      }
+      return undefined
+    },
+
     async deleteRun(runId: RunId, _reason: DeleteReason) {
+      for (const [key, delivery] of inbox) {
+        if (key === signalKey(runId, delivery.signalId)) inbox.delete(key)
+      }
       runs.delete(runId)
       runStates.delete(runId)
       logs.delete(runId)
@@ -153,11 +218,13 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
         if (timer.runId === runId) timers.delete(key)
       }
       for (const key of signalDeliveries.keys()) {
-        if (key.startsWith(`${runId}:`)) signalDeliveries.delete(key)
+        if ((JSON.parse(key) as [string, string])[0] === runId)
+          signalDeliveries.delete(key)
       }
     },
 
     async appendEvents(args: AppendEventsArgs): Promise<AppendEventsResult> {
+      assertLease(args.runId, args.leaseOwner)
       const log = logs.get(args.runId) ?? []
       if (log.length !== args.expectedNextIndex) {
         throw new LogConflictError(
@@ -284,7 +351,12 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
       }))
     },
 
+    async completeTimer(args) {
+      timers.delete(timerKey(args.runId, args.signalId))
+    },
+
     async scheduleTimer(args: ScheduleTimerArgs) {
+      assertLease(args.runId, args.leaseOwner)
       timers.set(timerKey(args.runId, args.signalId), {
         runId: args.runId,
         workflowId: args.workflowId,
@@ -426,8 +498,36 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
       const claims: Array<RunClaim> = []
       for (const run of runs.values()) {
         if (claims.length >= args.limit) break
-        if (run.status !== 'running') continue
-        if (!run.lease || run.lease.expiresAt > args.now) continue
+        if (run.lease && run.lease.expiresAt > args.now) continue
+        const pendingSignal =
+          run.status === 'paused' &&
+          run.waitingFor &&
+          [...inbox.entries()].some(
+            ([key, delivery]) =>
+              key === signalKey(run.runId, delivery.signalId) &&
+              delivery.name === run.waitingFor!.signalName &&
+              (delivery.stepId === undefined ||
+                delivery.stepId === run.waitingFor!.stepId) &&
+              !(logs.get(run.runId) ?? []).some(
+                ({ event }) =>
+                  event.type === 'SIGNAL_RESOLVED' &&
+                  event.signalId === delivery.signalId,
+              ),
+          )
+        const missingTimer =
+          run.status === 'paused' &&
+          run.wakeAt !== undefined &&
+          run.wakeAt <= args.now &&
+          ![...timers.values()].some(
+            (timer) => timer.runId === run.runId && timer.wakeAt === run.wakeAt,
+          )
+        if (
+          run.status !== 'running' &&
+          run.status !== 'queued' &&
+          !pendingSignal &&
+          !missingTimer
+        )
+          continue
 
         const nextLease = lease(args.leaseOwner, args.leaseMs, args.now)
         const claimed = updateRun(run.runId, (current) => ({
@@ -575,7 +675,7 @@ function timerKey(runId: RunId, signalId: string) {
 }
 
 function signalKey(runId: RunId, signalId: string) {
-  return `${runId}:${signalId}`
+  return JSON.stringify([runId, signalId])
 }
 
 function scheduleBucketKey(scheduleId: ScheduleId, bucketId: ScheduleBucketId) {

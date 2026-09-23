@@ -24,4 +24,4 @@ type RunAwaitable =
 };
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:490](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L490)
+Defined in: [packages/workflow-core/src/types.ts:549](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L549)

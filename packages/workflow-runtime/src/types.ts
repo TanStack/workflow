@@ -1,6 +1,7 @@
 import type {
   AnyWorkflowDefinition,
   ApprovalResult,
+  ConsumeBufferedSignalArgs,
   DeleteReason,
   RunState,
   RunStatus,
@@ -79,6 +80,7 @@ export interface ReadEventsArgs {
 }
 
 export interface AppendEventsArgs {
+  leaseOwner?: string
   runId: RunId
   expectedNextIndex: number
   events: ReadonlyArray<WorkflowEvent>
@@ -135,6 +137,7 @@ export interface MarkRunErroredArgs {
 }
 
 export interface ScheduleTimerArgs {
+  leaseOwner?: string
   runId: RunId
   workflowId: WorkflowId
   workflowVersion?: WorkflowVersion
@@ -284,10 +287,15 @@ export interface RunTimeline {
 }
 
 export interface SaveRunStateArgs {
+  leaseOwner?: string
   state: RunState
 }
 
 export interface WorkflowRunStoreAdapterStore {
+  consumeBufferedSignal?: (
+    args: ConsumeBufferedSignalArgs & { leaseOwner?: string },
+  ) => Promise<Extract<WorkflowEvent, { type: 'SIGNAL_RESOLVED' }> | undefined>
+
   loadRunState: (runId: RunId) => Promise<RunState | undefined>
   saveRunState: (args: SaveRunStateArgs) => Promise<void>
   deleteRun: (runId: RunId, reason: DeleteReason) => Promise<void>
@@ -304,7 +312,14 @@ export interface WorkflowRunStoreAdapterStore {
 
 export type WorkflowRunStoreAdapter = RunStore
 
+export type BufferSignalResult =
+  | { kind: 'buffered' | 'duplicate' | 'not-waiting'; run: WorkflowExecution }
+  | { kind: 'not-found' }
+
 export interface WorkflowExecutionStore extends WorkflowRunStoreAdapterStore {
+  /** Optional durable inbox. Entries and deduplication IDs live until run deletion. */
+  bufferSignal?: (args: DeliverSignalArgs) => Promise<BufferSignalResult>
+
   createRun: (args: CreateRunArgs) => Promise<CreateRunResult>
   loadRun: (runId: RunId) => Promise<WorkflowExecution | undefined>
   loadExecution: (runId: RunId) => Promise<LoadedExecution | undefined>
@@ -316,6 +331,8 @@ export interface WorkflowExecutionStore extends WorkflowRunStoreAdapterStore {
   markRunFinished: (args: MarkRunFinishedArgs) => Promise<void>
   markRunErrored: (args: MarkRunErroredArgs) => Promise<void>
 
+  /** Acknowledge a timer after its resolution is durable. Optional for legacy adapters. */
+  completeTimer?: (args: { runId: RunId; signalId: string }) => Promise<void>
   scheduleTimer: (args: ScheduleTimerArgs) => Promise<void>
   claimDueTimers: (
     args: ClaimDueTimersArgs,
@@ -362,6 +379,8 @@ export interface WorkflowRuntimeConfig<
 > {
   workflows: TWorkflows
   store: WorkflowExecutionStore
+  /** Opt in to durable early external signals. Requires inbox support on the store. */
+  bufferSignals?: boolean
   defaultLeaseMs?: number
   /** Best-effort live event fan-out for every runtime-driven run. */
   publish?: WorkflowRuntimeEventPublisher
@@ -437,6 +456,7 @@ export interface WorkflowRuntimeDeliverApprovalArgs {
 }
 
 export type WorkflowRuntimeRunResultKind =
+  | 'buffered'
   | 'completed'
   | 'paused'
   | 'errored'

@@ -5,7 +5,7 @@ title: Middleware
 
 # Interface: Middleware\<TCtxIn, TExtension\>
 
-Defined in: [packages/workflow-core/src/types.ts:404](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L404)
+Defined in: [packages/workflow-core/src/types.ts:463](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L463)
 
 ## Type Parameters
 
@@ -25,7 +25,7 @@ Defined in: [packages/workflow-core/src/types.ts:404](https://github.com/TanStac
 __kind: "middleware";
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:405](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L405)
+Defined in: [packages/workflow-core/src/types.ts:464](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L464)
 
 ***
 
@@ -35,4 +35,4 @@ Defined in: [packages/workflow-core/src/types.ts:405](https://github.com/TanStac
 server: MiddlewareServerFn<TCtxIn, TExtension>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:406](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L406)
+Defined in: [packages/workflow-core/src/types.ts:465](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L465)

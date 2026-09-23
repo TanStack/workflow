@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest'
+import { runDurabilityContractTests } from './durability.contract'
 import { LogConflictError, createWorkflow } from '@tanstack/workflow-core'
 import { createRunStoreAdapter, defineWorkflowRuntime } from '../../src'
 import type { WorkflowExecutionStore } from '../../src'
 
 interface WorkflowExecutionStoreContractOptions {
   name: string
+  /** Opt in only when implementing the optional inbox and timer capabilities. */
+  durability?: boolean
   createStore: () => WorkflowExecutionStore | Promise<WorkflowExecutionStore>
 }
 
 export function runWorkflowExecutionStoreContractTests(
   options: WorkflowExecutionStoreContractOptions,
 ) {
+  if (options.durability) runDurabilityContractTests(options)
   describe(`${options.name} WorkflowExecutionStore contract`, () => {
     it('creates runs idempotently for deterministic run IDs', async () => {
       const store = await options.createStore()

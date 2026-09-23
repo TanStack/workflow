@@ -26,16 +26,17 @@ export default {
 }
 ```
 
-Apply the package-owned D1 migration during setup/deploy:
+Apply the package-owned D1 migrations during setup/deploy:
 
 ```bash
 wrangler d1 migrations apply WORKFLOW_DB
 ```
 
-The SQL artifact lives at:
+Copy both SQL files into your configured migrations directory:
 
 ```txt
 node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0000_workflow_store.sql
+node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0001_signal_inbox.sql
 ```
 
 `store.ensureSchema()` remains available for tests, local demos, and explicit

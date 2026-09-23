@@ -32,7 +32,7 @@ const data = await ctx.step('fetch-user', (stepCtx) =>
 ```
 
 Options:
-- `retry`: `{ maxAttempts, backoff?, baseMs?, shouldRetry? }`
+- `retry`: `{ maxAttempts, durable?, backoff?, baseMs?, shouldRetry? }`
 - `timeout`: per-attempt wall-clock budget in ms
 - `meta`: free-form metadata copied into `STEP_*` events
 
@@ -166,3 +166,10 @@ import { succeed, fail } from '@tanstack/workflow-core'
 if (review.verdict === 'block') return fail(`legal: ${review.findings.join('; ')}`)
 return succeed({ article: draft })
 ```
+
+## `ctx.compensate(id, fn, opts?)`
+
+Register a durable undo handler for an uncaught workflow failure. Handlers run
+in reverse registration order and can retry across restarts. See
+[Signals, retries, and compensation](../guide/durable-recovery.md) for examples,
+retention, and external-effect limits.
