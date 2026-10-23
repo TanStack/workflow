@@ -106,6 +106,8 @@ On resume the engine reads `RunState.workflowVersion` and routes to the matching
 
 Mismatched version with nothing in `previousVersions` → `RUN_ERRORED { code: 'workflow_version_mismatch' }`.
 
+When the run is driven through `@tanstack/workflow-runtime`, signal, approval, and timer deliveries to such a run are rejected before they are consumed: the result kind is `version-mismatch` and the run stays `paused`, so restoring the missing version lets the same delivery resume it.
+
 ## Attach (read-only subscribe)
 
 A second subscriber (browser refresh, mobile reconnect) reads current state without driving the run forward:

@@ -212,6 +212,15 @@ async function deliverSignal<
         args.minYieldRemainingMs,
       )
       const leaseMs = resolveLeaseMs(config, args.leaseMs)
+      const rejected = await rejectUnregisteredRunVersion(
+        config,
+        telemetry,
+        args.runId,
+      )
+      if (rejected) {
+        span.setAttribute('tanstack.workflow.result_kind', rejected.kind)
+        return rejected
+      }
       const delivery = {
         signalId: args.signalId,
         stepId: args.stepId,
@@ -279,6 +288,12 @@ async function deliverSignalFromRuntime<
     args.minYieldRemainingMs,
   )
   const leaseMs = resolveLeaseMs(config, args.leaseMs)
+  const rejected = await rejectUnregisteredRunVersion(
+    config,
+    telemetry,
+    args.runId,
+  )
+  if (rejected) return rejected
   const delivery = {
     signalId: args.signalId,
     stepId: args.stepId,
@@ -338,6 +353,15 @@ async function deliverApproval<
         args.minYieldRemainingMs,
       )
       const leaseMs = resolveLeaseMs(config, args.leaseMs)
+      const rejected = await rejectUnregisteredRunVersion(
+        config,
+        telemetry,
+        args.runId,
+      )
+      if (rejected) {
+        span.setAttribute('tanstack.workflow.result_kind', rejected.kind)
+        return rejected
+      }
       const delivered = await traceStoreOperation(
         telemetry,
         'store.deliver_approval',
@@ -419,6 +443,7 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
       const recovered: Array<WorkflowRuntimeRunResult> = []
       const scheduled: Array<WorkflowRuntimeRunResult> = []
       const timers: Array<WorkflowRuntimeRunResult> = []
+      const rejectedTimers = new Set<string>()
       let deadlineReached = false
 
       while (recovered.length < maxRecoveredRuns) {
@@ -569,21 +594,25 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
         )
         const timer = dueTimers[0]
         if (!timer) break
+        // A rejected timer keeps this sweep's lease, so the store hands it
+        // back on the next claim. Stop rather than spin on it.
+        const timerKey = `${timer.runId}:${timer.signalId}`
+        if (rejectedTimers.has(timerKey)) break
 
-        timers.push(
-          await deliverTimer(config, telemetry, {
-            timer,
-            now,
-            leaseOwner,
-            leaseMs,
-            includeEvents: args.includeEvents,
-            maxEvents: args.maxEvents,
-            deadline,
-            minYieldRemainingMs,
-            yieldResumeAt: now + 1,
-            publish: args.publish,
-          }),
-        )
+        const result = await deliverTimer(config, telemetry, {
+          timer,
+          now,
+          leaseOwner,
+          leaseMs,
+          includeEvents: args.includeEvents,
+          maxEvents: args.maxEvents,
+          deadline,
+          minYieldRemainingMs,
+          yieldResumeAt: now + 1,
+          publish: args.publish,
+        })
+        if (result.kind === 'version-mismatch') rejectedTimers.add(timerKey)
+        timers.push(result)
       }
 
       const result = {
@@ -851,6 +880,46 @@ async function syncTimerFromRunState<
         now,
       }),
   )
+}
+
+// Deliveries are checked before the store consumes them: once consumed,
+// a run whose version this runtime can't replay would be left `running`
+// with no lease and nothing awaited, and redelivery would be refused.
+async function rejectUnregisteredRunVersion<
+  TWorkflows extends Record<string, WorkflowRegistration>,
+>(
+  config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
+  runId: string,
+): Promise<WorkflowRuntimeRunResult | undefined> {
+  const run = await traceStoreOperation(
+    telemetry,
+    'store.load_run',
+    { runId },
+    () => config.store.loadRun(runId),
+  )
+  // Unversioned runs replay against the current workflow (see core's
+  // `selectVersionForRun`), so only versioned runs can mismatch.
+  if (!run?.workflowVersion) return undefined
+
+  const workflow = await loadWorkflow(config, run.workflowId)
+  if (
+    workflow.version === run.workflowVersion ||
+    workflow.previousVersions?.some(
+      (previous) => previous.version === run.workflowVersion,
+    )
+  ) {
+    return undefined
+  }
+
+  return {
+    kind: 'version-mismatch',
+    runId,
+    workflowId: run.workflowId,
+    run,
+    events: [],
+    eventCount: 0,
+  }
 }
 
 async function loadWorkflow<

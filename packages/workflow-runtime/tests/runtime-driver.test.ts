@@ -731,6 +731,166 @@ describe('workflow runtime driver', () => {
     expect(due.timers[0]?.kind).toBe('completed')
   })
 
+  it('rejects a signal for an unregistered version without consuming it', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'versioned', version }).handler(async (ctx) => {
+        return ctx.waitForEvent<{ ok: boolean }>('go', { id: 'go' })
+      })
+    const v1 = defineWorkflowRuntime({
+      store,
+      workflows: { versioned: { load: async () => define('v1') } },
+    })
+    const v2 = defineWorkflowRuntime({
+      store,
+      workflows: { versioned: { load: async () => define('v2') } },
+    })
+
+    const start = await v1.startRun({
+      workflowId: 'versioned',
+      runId: 'versioned:1',
+      input: {},
+      now: 0,
+    })
+    const rejected = await v2.deliverSignal({
+      runId: 'versioned:1',
+      stepId: 'go',
+      signalId: 'signal-1',
+      name: 'go',
+      payload: { ok: true },
+      now: 10,
+    })
+    const afterReject = await store.loadRun('versioned:1')
+    const resumed = await v1.deliverSignal({
+      runId: 'versioned:1',
+      stepId: 'go',
+      signalId: 'signal-1',
+      name: 'go',
+      payload: { ok: true },
+      now: 20,
+    })
+
+    expect(start.kind).toBe('paused')
+    expect(rejected.kind).toBe('version-mismatch')
+    expect(rejected.run?.status).toBe('paused')
+    expect(afterReject?.status).toBe('paused')
+    expect(afterReject?.lease).toBeUndefined()
+    expect(resumed.kind).toBe('completed')
+  })
+
+  it('rejects an approval for an unregistered version without consuming it', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'approval', version }).handler(async (ctx) => {
+        return ctx.approve({ title: 'Ship it?' })
+      })
+    const v1 = defineWorkflowRuntime({
+      store,
+      workflows: { approval: { load: async () => define('v1') } },
+    })
+    const v2 = defineWorkflowRuntime({
+      store,
+      workflows: { approval: { load: async () => define('v2') } },
+    })
+
+    await v1.startRun({
+      workflowId: 'approval',
+      runId: 'approval:1',
+      input: {},
+      now: 0,
+    })
+    const approvalId = (await store.loadRun('approval:1'))?.pendingApproval
+      ?.approvalId
+    const approval = { approvalId: approvalId!, approved: true }
+    const rejected = await v2.deliverApproval({
+      runId: 'approval:1',
+      approval,
+      now: 10,
+    })
+    const afterReject = await store.loadRun('approval:1')
+    const resumed = await v1.deliverApproval({
+      runId: 'approval:1',
+      approval,
+      now: 20,
+    })
+
+    expect(approvalId).toBeDefined()
+    expect(rejected.kind).toBe('version-mismatch')
+    expect(afterReject?.status).toBe('paused')
+    expect(resumed.kind).toBe('completed')
+  })
+
+  it('leaves a timer pending when its run version is unregistered', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'sleeper', version }).handler(async (ctx) => {
+        await ctx.sleepUntil(100)
+        return { awoke: true }
+      })
+    const v1 = defineWorkflowRuntime({
+      store,
+      workflows: { sleeper: { load: async () => define('v1') } },
+    })
+    const v2 = defineWorkflowRuntime({
+      store,
+      workflows: { sleeper: { load: async () => define('v2') } },
+    })
+
+    await v1.startRun({
+      workflowId: 'sleeper',
+      runId: 'sleeper:1',
+      input: {},
+      now: 0,
+    })
+    const rejected = await v2.sweep({ now: 100, leaseMs: 50 })
+    const afterReject = await store.loadRun('sleeper:1')
+    const resumed = await v1.sweep({ now: 200 })
+
+    expect(rejected.timers.map((timer) => timer.kind)).toEqual([
+      'version-mismatch',
+    ])
+    expect(afterReject?.status).toBe('paused')
+    expect(resumed.timers.map((timer) => timer.kind)).toEqual(['completed'])
+  })
+
+  it('accepts a signal for a version registered via previousVersions', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'migrated', version }).handler(async (ctx) => {
+        return ctx.waitForEvent<{ ok: boolean }>('go', { id: 'go' })
+      })
+    const v1 = defineWorkflowRuntime({
+      store,
+      workflows: { migrated: { load: async () => define('v1') } },
+    })
+    const v2 = defineWorkflowRuntime({
+      store,
+      workflows: {
+        migrated: {
+          load: async () => define('v2'),
+          previousVersions: { v1: async () => define('v1') },
+        },
+      },
+    })
+
+    await v1.startRun({
+      workflowId: 'migrated',
+      runId: 'migrated:1',
+      input: {},
+      now: 0,
+    })
+    const resumed = await v2.deliverSignal({
+      runId: 'migrated:1',
+      stepId: 'go',
+      signalId: 'signal-1',
+      name: 'go',
+      payload: { ok: true },
+      now: 10,
+    })
+
+    expect(resumed.kind).toBe('completed')
+  })
+
   it('sweeps due schedule buckets into deterministic runs', async () => {
     const store = inMemoryWorkflowExecutionStore()
     const workflow = createWorkflow({ id: 'scheduled' }).handler(
