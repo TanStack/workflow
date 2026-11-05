@@ -212,14 +212,13 @@ async function deliverSignal<
         args.minYieldRemainingMs,
       )
       const leaseMs = resolveLeaseMs(config, args.leaseMs)
-      const rejected = await rejectUnregisteredRunVersion(
-        config,
-        telemetry,
-        args.runId,
-      )
-      if (rejected) {
-        span.setAttribute('tanstack.workflow.result_kind', rejected.kind)
-        return rejected
+      const prepared = await prepareRunDelivery(config, telemetry, args.runId)
+      if (prepared.rejected) {
+        span.setAttribute(
+          'tanstack.workflow.result_kind',
+          prepared.rejected.kind,
+        )
+        return prepared.rejected
       }
       const delivery = {
         signalId: args.signalId,
@@ -245,7 +244,9 @@ async function deliverSignal<
         return result
       }
 
-      const workflow = await loadWorkflow(config, delivered.run.workflowId)
+      const workflow =
+        prepared.workflow ??
+        (await loadWorkflow(config, delivered.run.workflowId))
       const result = await driveClaimedRun(config, telemetry, {
         workflow,
         workflowId: delivered.run.workflowId,
@@ -288,12 +289,8 @@ async function deliverSignalFromRuntime<
     args.minYieldRemainingMs,
   )
   const leaseMs = resolveLeaseMs(config, args.leaseMs)
-  const rejected = await rejectUnregisteredRunVersion(
-    config,
-    telemetry,
-    args.runId,
-  )
-  if (rejected) return rejected
+  const prepared = await prepareRunDelivery(config, telemetry, args.runId)
+  if (prepared.rejected) return prepared.rejected
   const delivery = {
     signalId: args.signalId,
     stepId: args.stepId,
@@ -316,7 +313,8 @@ async function deliverSignalFromRuntime<
     return resultFromSignalDelivery(args.runId, delivered)
   }
 
-  const workflow = await loadWorkflow(config, delivered.run.workflowId)
+  const workflow =
+    prepared.workflow ?? (await loadWorkflow(config, delivered.run.workflowId))
   return driveClaimedRun(config, telemetry, {
     workflow,
     workflowId: delivered.run.workflowId,
@@ -353,14 +351,13 @@ async function deliverApproval<
         args.minYieldRemainingMs,
       )
       const leaseMs = resolveLeaseMs(config, args.leaseMs)
-      const rejected = await rejectUnregisteredRunVersion(
-        config,
-        telemetry,
-        args.runId,
-      )
-      if (rejected) {
-        span.setAttribute('tanstack.workflow.result_kind', rejected.kind)
-        return rejected
+      const prepared = await prepareRunDelivery(config, telemetry, args.runId)
+      if (prepared.rejected) {
+        span.setAttribute(
+          'tanstack.workflow.result_kind',
+          prepared.rejected.kind,
+        )
+        return prepared.rejected
       }
       const delivered = await traceStoreOperation(
         telemetry,
@@ -379,7 +376,9 @@ async function deliverApproval<
         return result
       }
 
-      const workflow = await loadWorkflow(config, delivered.run.workflowId)
+      const workflow =
+        prepared.workflow ??
+        (await loadWorkflow(config, delivered.run.workflowId))
       const result = await driveClaimedRun(config, telemetry, {
         workflow,
         workflowId: delivered.run.workflowId,
@@ -443,7 +442,8 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
       const recovered: Array<WorkflowRuntimeRunResult> = []
       const scheduled: Array<WorkflowRuntimeRunResult> = []
       const timers: Array<WorkflowRuntimeRunResult> = []
-      const rejectedTimers = new Set<string>()
+      const seenTimers = new Set<string>()
+      let rejectedTimer = false
       let deadlineReached = false
 
       while (recovered.length < maxRecoveredRuns) {
@@ -579,7 +579,6 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
           deadlineReached = true
           break
         }
-
         const dueTimers = await traceStoreOperation(
           telemetry,
           'store.claim_due_timers',
@@ -587,32 +586,38 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
           () =>
             config.store.claimDueTimers({
               now,
-              limit: 1,
+              limit: maxTimers,
               leaseOwner,
               leaseMs,
             }),
         )
-        const timer = dueTimers[0]
-        if (!timer) break
-        // A rejected timer keeps this sweep's lease, so the store hands it
-        // back on the next claim. Stop rather than spin on it.
-        const timerKey = `${timer.runId}:${timer.signalId}`
-        if (rejectedTimers.has(timerKey)) break
-
-        const result = await deliverTimer(config, telemetry, {
-          timer,
-          now,
-          leaseOwner,
-          leaseMs,
-          includeEvents: args.includeEvents,
-          maxEvents: args.maxEvents,
-          deadline,
-          minYieldRemainingMs,
-          yieldResumeAt: now + 1,
-          publish: args.publish,
-        })
-        if (result.kind === 'version-mismatch') rejectedTimers.add(timerKey)
-        timers.push(result)
+        let advanced = false
+        for (const timer of dueTimers) {
+          const timerKey = JSON.stringify([timer.runId, timer.signalId])
+          if (seenTimers.has(timerKey)) continue
+          if (timers.length >= maxTimers) break
+          if (shouldStopForDeadline(deadline, minYieldRemainingMs)) {
+            deadlineReached = true
+            break
+          }
+          seenTimers.add(timerKey)
+          advanced = true
+          const result = await deliverTimer(config, telemetry, {
+            timer,
+            now,
+            leaseOwner,
+            leaseMs,
+            includeEvents: args.includeEvents,
+            maxEvents: args.maxEvents,
+            deadline,
+            minYieldRemainingMs,
+            yieldResumeAt: now + 1,
+            publish: args.publish,
+          })
+          if (result.kind === 'version-mismatch') rejectedTimer = true
+          timers.push(result)
+        }
+        if (!advanced || deadlineReached) break
       }
 
       const result = {
@@ -622,6 +627,7 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
         summary: summarizeSweep(recovered, scheduled, timers),
         deadlineReached,
         remainingMayExist:
+          rejectedTimer ||
           deadlineReached ||
           recovered.length >= maxRecoveredRuns ||
           scheduled.length >= maxScheduledRuns ||
@@ -885,40 +891,44 @@ async function syncTimerFromRunState<
 // Deliveries are checked before the store consumes them: once consumed,
 // a run whose version this runtime can't replay would be left `running`
 // with no lease and nothing awaited, and redelivery would be refused.
-async function rejectUnregisteredRunVersion<
+async function prepareRunDelivery<
   TWorkflows extends Record<string, WorkflowRegistration>,
 >(
   config: WorkflowRuntimeConfig<TWorkflows>,
   telemetry: WorkflowTelemetry,
   runId: string,
-): Promise<WorkflowRuntimeRunResult | undefined> {
+): Promise<{
+  workflow?: AnyWorkflowDefinition
+  rejected?: WorkflowRuntimeRunResult
+}> {
   const run = await traceStoreOperation(
     telemetry,
     'store.load_run',
     { runId },
     () => config.store.loadRun(runId),
   )
-  // Unversioned runs replay against the current workflow (see core's
-  // `selectVersionForRun`), so only versioned runs can mismatch.
-  if (!run?.workflowVersion) return undefined
+  if (!run) return {}
 
   const workflow = await loadWorkflow(config, run.workflowId)
   if (
+    !run.workflowVersion ||
     workflow.version === run.workflowVersion ||
     workflow.previousVersions?.some(
       (previous) => previous.version === run.workflowVersion,
     )
   ) {
-    return undefined
+    return { workflow }
   }
 
   return {
-    kind: 'version-mismatch',
-    runId,
-    workflowId: run.workflowId,
-    run,
-    events: [],
-    eventCount: 0,
+    rejected: {
+      kind: 'version-mismatch',
+      runId,
+      workflowId: run.workflowId,
+      run,
+      events: [],
+      eventCount: 0,
+    },
   }
 }
 

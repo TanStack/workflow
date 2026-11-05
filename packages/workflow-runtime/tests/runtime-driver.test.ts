@@ -891,6 +891,79 @@ describe('workflow runtime driver', () => {
     expect(resumed.kind).toBe('completed')
   })
 
+  it('executes the same workflow definition that passed the delivery check', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'loaded-once', version }).handler(async (ctx) =>
+        ctx.waitForEvent('go', { id: 'go' }),
+      )
+    const first = define('v1')
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(first)
+      .mockResolvedValue(define('v2'))
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: { 'loaded-once': { load } },
+    })
+    await runtime.startRun({
+      workflowId: 'loaded-once',
+      runId: 'once',
+      input: {},
+    })
+    const result = await runtime.deliverSignal({
+      runId: 'once',
+      name: 'go',
+      stepId: 'go',
+      signalId: 'go-1',
+      payload: true,
+    })
+    expect(result.kind).toBe('completed')
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('continues to other due timers when one workflow version is missing', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (id: string, version: string) =>
+      createWorkflow({ id, version }).handler(async (ctx) => {
+        await ctx.sleepUntil(100)
+        return true
+      })
+    const old = defineWorkflowRuntime({
+      store,
+      workflows: {
+        missing: { load: async () => define('missing', 'v1') },
+        available: { load: async () => define('available', 'v1') },
+      },
+    })
+    await old.startRun({
+      workflowId: 'missing',
+      runId: 'missing',
+      input: {},
+      now: 0,
+    })
+    await old.startRun({
+      workflowId: 'available',
+      runId: 'available',
+      input: {},
+      now: 0,
+    })
+    const current = defineWorkflowRuntime({
+      store,
+      workflows: {
+        missing: { load: async () => define('missing', 'v2') },
+        available: { load: async () => define('available', 'v1') },
+      },
+    })
+    const result = await current.sweep({ now: 100, maxTimers: 10 })
+    expect(result.timers.map((timer) => timer.kind)).toEqual([
+      'version-mismatch',
+      'completed',
+    ])
+    expect(result.remainingMayExist).toBe(true)
+  })
+
   it('sweeps due schedule buckets into deterministic runs', async () => {
     const store = inMemoryWorkflowExecutionStore()
     const workflow = createWorkflow({ id: 'scheduled' }).handler(
