@@ -1,6 +1,6 @@
 {
   "name": "@tanstack/workflow-runtime",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Runtime contracts for scheduling, durable execution stores, leases, timers, signals, and host adapters for TanStack Workflow.",
   "author": "Tanner Linsley",
   "license": "MIT",

@@ -1,5 +1,13 @@
 # @tanstack/workflow-store-cloudflare-d1
 
+## 0.0.5
+
+### Patch Changes
+
+- Updated dependencies [[`b928717`](https://github.com/TanStack/workflow/commit/b9287174b44424059895a0ed834b18ce50e0484a)]:
+  - @tanstack/workflow-core@0.0.5
+  - @tanstack/workflow-runtime@0.0.4
+
 ## 0.0.4
 
 ### Patch Changes
