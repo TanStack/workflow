@@ -183,11 +183,7 @@ export type DeliverApprovalResult =
   | { kind: 'not-found' }
 
 export type WorkflowOverlapPolicy =
-  | 'skip'
-  | 'allow'
-  | 'buffer-one'
-  | 'cancel-previous'
-  | 'terminate-previous'
+  'skip' | 'allow' | 'buffer-one' | 'cancel-previous' | 'terminate-previous'
 
 export type WorkflowScheduleSpec =
   | {

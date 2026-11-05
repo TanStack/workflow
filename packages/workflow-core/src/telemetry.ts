@@ -31,8 +31,7 @@ export interface WorkflowTelemetryOptions {
   tracer?: Tracer
   spanNamePrefix?: string
   attributes?:
-    | Attributes
-    | ((ctx: WorkflowTelemetrySpanContext) => Attributes | undefined)
+    Attributes | ((ctx: WorkflowTelemetrySpanContext) => Attributes | undefined)
   recordExceptions?: boolean
   mapStepMeta?: (
     meta: WorkflowMetadata,

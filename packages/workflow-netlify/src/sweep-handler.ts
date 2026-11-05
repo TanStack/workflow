@@ -39,8 +39,7 @@ export interface NetlifyWorkflowSweepHandlerOptions<
   runtime: WorkflowRuntimeDefinition<TWorkflows>
   now?: () => number
   leaseOwner?:
-    | string
-    | ((args: { request: Request; now: number }) => string | undefined)
+    string | ((args: { request: Request; now: number }) => string | undefined)
   limit?: number
   maxScheduledRuns?: number
   maxTimers?: number
