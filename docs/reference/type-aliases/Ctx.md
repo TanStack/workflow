@@ -9,7 +9,7 @@ title: Ctx
 type Ctx<TInput, TState, TExtensions> = BaseCtx<TInput, TState> & TExtensions;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:359](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L359)
+Defined in: [packages/workflow-core/src/types.ts:418](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L418)
 
 Full ctx type passed to a handler, including middleware-added
  fields. `TExtensions` defaults to `unknown` so the empty-middleware

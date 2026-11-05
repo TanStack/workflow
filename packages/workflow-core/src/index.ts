@@ -61,6 +61,7 @@ export type {
   BaseCtx,
   CheckpointEvent,
   Ctx,
+  ConsumeBufferedSignalArgs,
   DeleteReason,
   DeterministicValueOptions,
   DurableOperationOptions,

@@ -4,7 +4,11 @@ import {
   quoteIdent,
   resolveCloudflareD1WorkflowStoreTables,
 } from './schema-contract'
-import type { RunState, WorkflowEvent } from '@tanstack/workflow-core'
+import type {
+  RunState,
+  SignalDelivery,
+  WorkflowEvent,
+} from '@tanstack/workflow-core'
 import type { CloudflareD1WorkflowStoreTables } from './schema-contract'
 import type {
   AppendEventsArgs,
@@ -158,6 +162,16 @@ export function createCloudflareD1WorkflowStore(
 
     async saveRunState(args: SaveRunStateArgs) {
       const state = args.state
+      if (args.leaseOwner !== undefined && !hasBatch(db))
+        throw new Error('Fenced state writes require D1 batch support.')
+      await assertRunLease(db, tables, state.runId, args.leaseOwner)
+      const fence = `where (? is null or exists (select 1 from ${tables.runs} where run_id = ? and lease_owner = ? and lease_expires_at > ?))`
+      const fenceParams = [
+        args.leaseOwner ?? null,
+        state.runId,
+        args.leaseOwner ?? null,
+        Date.now(),
+      ]
       await executeMany(db, [
         statement(
           `
@@ -175,7 +189,7 @@ export function createCloudflareD1WorkflowStore(
               created_at,
               updated_at
             )
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            select ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${fence}
             on conflict (run_id) do update set
               workflow_id = excluded.workflow_id,
               workflow_version = excluded.workflow_version,
@@ -202,6 +216,7 @@ export function createCloudflareD1WorkflowStore(
             encodeJsonOrNull(state.pendingApproval),
             state.createdAt,
             state.updatedAt,
+            ...fenceParams,
           ],
         ),
         statement(
@@ -221,7 +236,7 @@ export function createCloudflareD1WorkflowStore(
               created_at,
               updated_at
             )
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            select ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? ${fence}
             on conflict (run_id) do update set
               workflow_id = excluded.workflow_id,
               workflow_version = excluded.workflow_version,
@@ -252,6 +267,7 @@ export function createCloudflareD1WorkflowStore(
               : null,
             state.createdAt,
             state.updatedAt,
+            ...fenceParams,
           ],
         ),
       ])
@@ -259,6 +275,9 @@ export function createCloudflareD1WorkflowStore(
 
     async deleteRun(runId) {
       await executeMany(db, [
+        statement(`delete from ${tables.signalInbox} where run_id = ?`, [
+          runId,
+        ]),
         statement(`delete from ${tables.runStates} where run_id = ?`, [runId]),
         statement(`delete from ${tables.eventLocks} where run_id = ?`, [runId]),
         statement(`delete from ${tables.signalDeliveries} where run_id = ?`, [
@@ -271,6 +290,7 @@ export function createCloudflareD1WorkflowStore(
     },
 
     async appendEvents(args: AppendEventsArgs): Promise<AppendEventsResult> {
+      await assertRunLease(db, tables, args.runId, args.leaseOwner)
       await execute(
         db,
         `
@@ -309,7 +329,7 @@ export function createCloudflareD1WorkflowStore(
       let nextIndex = args.expectedNextIndex
       for (const event of args.events) {
         try {
-          await execute(
+          const inserted = await query(
             db,
             `
               insert into ${tables.events} (
@@ -320,7 +340,9 @@ export function createCloudflareD1WorkflowStore(
                 event,
                 created_at
               )
-              values (?, ?, ?, ?, ?, ?)
+              select ?, ?, ?, ?, ?, ?
+              where (? is null or exists (select 1 from ${tables.runs} where run_id = ? and lease_owner = ? and lease_expires_at > ?))
+              returning event_index
             `,
             [
               args.runId,
@@ -329,8 +351,13 @@ export function createCloudflareD1WorkflowStore(
               getStepId(event) ?? null,
               encodeJson(event),
               event.ts,
+              args.leaseOwner ?? null,
+              args.runId,
+              args.leaseOwner ?? null,
+              Date.now(),
             ],
           )
+          if (!inserted.length) throw new Error('Workflow run lease lost.')
         } catch {
           const conflict = await loadEventAtIndex(
             db,
@@ -484,7 +511,18 @@ export function createCloudflareD1WorkflowStore(
       )
     },
 
+    async completeTimer(args) {
+      await execute(
+        db,
+        `delete from ${tables.timers} where run_id = ? and signal_id = ?`,
+        [args.runId, args.signalId],
+      )
+    },
+
     async scheduleTimer(args: ScheduleTimerArgs) {
+      await assertRunLease(db, tables, args.runId, args.leaseOwner)
+      if (args.leaseOwner !== undefined && !hasBatch(db))
+        throw new Error('Fenced timer writes require D1 batch support.')
       await executeMany(db, [
         statement(
           `
@@ -495,7 +533,8 @@ export function createCloudflareD1WorkflowStore(
               workflow_version,
               wake_at
             )
-            values (?, ?, ?, ?, ?)
+            select ?, ?, ?, ?, ?
+            where (? is null or exists (select 1 from ${tables.runs} where run_id = ? and lease_owner = ? and lease_expires_at > ?))
             on conflict (run_id, signal_id) do update set
               workflow_id = excluded.workflow_id,
               workflow_version = excluded.workflow_version,
@@ -509,6 +548,10 @@ export function createCloudflareD1WorkflowStore(
             args.workflowId,
             args.workflowVersion ?? null,
             args.wakeAt,
+            args.leaseOwner ?? null,
+            args.runId,
+            args.leaseOwner ?? null,
+            Date.now(),
           ],
         ),
         statement(
@@ -517,9 +560,16 @@ export function createCloudflareD1WorkflowStore(
             set
               wake_at = ?,
               updated_at = ?
-            where run_id = ?
+            where run_id = ? and (? is null or (lease_owner = ? and lease_expires_at > ?))
           `,
-          [args.wakeAt, args.now, args.runId],
+          [
+            args.wakeAt,
+            args.now,
+            args.runId,
+            args.leaseOwner ?? null,
+            args.leaseOwner ?? null,
+            Date.now(),
+          ],
         ),
       ])
     },
@@ -573,6 +623,112 @@ export function createCloudflareD1WorkflowStore(
       }
 
       return timers
+    },
+
+    async bufferSignal(args) {
+      const run = await loadRunById(db, tables, args.runId)
+      if (!run) return { kind: 'not-found' }
+      const rows = await query(
+        db,
+        `
+        insert into ${tables.signalInbox} (run_id, signal_id, name, step_id, delivery, created_at)
+        select ?, ?, ?, ?, ?, ? where exists (
+          select 1 from ${tables.runs} where run_id = ? and status not in ('finished', 'errored', 'aborted')
+        ) and ? <> '__timer' and not exists (
+          select 1 from ${tables.signalDeliveries} where run_id = ? and signal_id = ?
+        ) on conflict (run_id, signal_id) do nothing returning signal_id
+      `,
+        [
+          args.runId,
+          args.delivery.signalId,
+          args.delivery.name,
+          args.delivery.stepId ?? null,
+          encodeJson(args.delivery),
+          args.now,
+          args.runId,
+          args.delivery.name,
+          args.runId,
+          args.delivery.signalId,
+        ],
+      )
+      if (rows.length) return { kind: 'buffered', run }
+      const existing = await query(
+        db,
+        `select 1 from ${tables.signalInbox} where run_id = ? and signal_id = ?`,
+        [args.runId, args.delivery.signalId],
+      )
+      return {
+        kind:
+          existing.length ||
+          (await loadSignalDelivery(
+            db,
+            tables,
+            args.runId,
+            args.delivery.signalId,
+          ))
+            ? 'duplicate'
+            : 'not-waiting',
+        run,
+      }
+    },
+
+    async consumeBufferedSignal(args) {
+      await assertRunLease(db, tables, args.runId, args.leaseOwner)
+      const candidates = await query<{ delivery: string }>(
+        db,
+        `
+        select delivery from ${tables.signalInbox} inbox
+        where run_id = ? and name = ? and (step_id is null or step_id = ?)
+          and not exists (select 1 from ${tables.events} event
+            where event.run_id = inbox.run_id and event.event_type = 'SIGNAL_RESOLVED'
+              and json_extract(event.event, '$.signalId') = inbox.signal_id)
+        order by sequence limit 1
+      `,
+        [args.runId, args.name, args.stepId],
+      )
+      if (!candidates[0]) return undefined
+      const delivery = decodeJson(candidates[0].delivery) as SignalDelivery
+      const event: Extract<WorkflowEvent, { type: 'SIGNAL_RESOLVED' }> = {
+        type: 'SIGNAL_RESOLVED',
+        ts: args.now,
+        stepId: args.stepId,
+        signalId: delivery.signalId,
+        name: delivery.name,
+        payload: delivery.payload,
+        meta: delivery.meta,
+      }
+      // A single SQLite statement both consumes the inbox entry and records its
+      // checkpoint. Entries stay in the inbox for run-lifetime deduplication.
+      const inserted = await query(
+        db,
+        `
+        insert into ${tables.events} (run_id, event_index, event_type, step_id, event, created_at)
+        select ?, ?, 'SIGNAL_RESOLVED', ?, ?, ?
+        where (select count(*) from ${tables.events} where run_id = ?) = ?
+          and not exists (select 1 from ${tables.events} where run_id = ? and event_type = 'SIGNAL_RESOLVED'
+            and json_extract(event, '$.signalId') = ?)
+          and (? is null or exists (select 1 from ${tables.runs} where run_id = ? and lease_owner = ? and lease_expires_at > ?))
+        returning event_index
+      `,
+        [
+          args.runId,
+          args.expectedNextIndex,
+          args.stepId,
+          encodeJson(event),
+          args.now,
+          args.runId,
+          args.expectedNextIndex,
+          args.runId,
+          delivery.signalId,
+          args.leaseOwner ?? null,
+          args.runId,
+          args.leaseOwner ?? null,
+          Date.now(),
+        ],
+      )
+      if (!inserted.length)
+        throw new LogConflictError(args.runId, args.expectedNextIndex)
+      return event
     },
 
     async deliverSignal<TPayload>(
@@ -836,13 +992,20 @@ export function createCloudflareD1WorkflowStore(
         `
           select run_id
           from ${tables.runs}
-          where status = 'running'
-            and lease_expires_at is not null
-            and lease_expires_at <= ?
+          where (lease_expires_at is null or lease_expires_at <= ?)
+            and (status in ('running', 'queued') or (status = 'paused' and (
+              (wake_at <= ? and not exists (select 1 from ${tables.timers} timer where timer.run_id = ${tables.runs}.run_id and timer.wake_at = ${tables.runs}.wake_at))
+              or exists (select 1 from ${tables.signalInbox} inbox
+                where inbox.run_id = ${tables.runs}.run_id
+                  and inbox.name = json_extract(${tables.runs}.waiting_for, '$.signalName')
+                  and (inbox.step_id is null or inbox.step_id = json_extract(${tables.runs}.waiting_for, '$.stepId'))
+                  and not exists (select 1 from ${tables.events} event where event.run_id = inbox.run_id
+                    and event.event_type = 'SIGNAL_RESOLVED' and json_extract(event.event, '$.signalId') = inbox.signal_id))
+            )))
           order by updated_at asc, run_id asc
           limit ?
         `,
-        [args.now, args.limit],
+        [args.now, args.now, args.limit],
       )
       const claims: Array<RunClaim> = []
 
@@ -856,9 +1019,16 @@ export function createCloudflareD1WorkflowStore(
               lease_expires_at = ?,
               updated_at = ?
             where run_id = ?
-              and status = 'running'
-              and lease_expires_at is not null
-              and lease_expires_at <= ?
+              and (lease_expires_at is null or lease_expires_at <= ?)
+            and (status in ('running', 'queued') or (status = 'paused' and (
+              (wake_at <= ? and not exists (select 1 from ${tables.timers} timer where timer.run_id = ${tables.runs}.run_id and timer.wake_at = ${tables.runs}.wake_at))
+              or exists (select 1 from ${tables.signalInbox} inbox
+                where inbox.run_id = ${tables.runs}.run_id
+                  and inbox.name = json_extract(${tables.runs}.waiting_for, '$.signalName')
+                  and (inbox.step_id is null or inbox.step_id = json_extract(${tables.runs}.waiting_for, '$.stepId'))
+                  and not exists (select 1 from ${tables.events} event where event.run_id = inbox.run_id
+                    and event.event_type = 'SIGNAL_RESOLVED' and json_extract(event.event, '$.signalId') = inbox.signal_id))
+            )))
             returning *
           `,
           [
@@ -866,6 +1036,7 @@ export function createCloudflareD1WorkflowStore(
             args.now + args.leaseMs,
             args.now,
             row.run_id,
+            args.now,
             args.now,
           ],
         )
@@ -922,6 +1093,7 @@ interface TableSqls {
   eventLocks: string
   events: string
   timers: string
+  signalInbox: string
   signalDeliveries: string
   schedules: string
   scheduleBuckets: string
@@ -1009,6 +1181,7 @@ function tableSqls(tables: CloudflareD1WorkflowStoreTables): TableSqls {
     eventLocks: quoteIdent(tables.eventLocks),
     events: quoteIdent(tables.events),
     timers: quoteIdent(tables.timers),
+    signalInbox: quoteIdent(tables.signalInbox),
     signalDeliveries: quoteIdent(tables.signalDeliveries),
     schedules: quoteIdent(tables.schedules),
     scheduleBuckets: quoteIdent(tables.scheduleBuckets),
@@ -1302,4 +1475,16 @@ function numberOrUndefined(value: number | string | null) {
 
 function getStepId(event: WorkflowEvent) {
   return 'stepId' in event ? event.stepId : undefined
+}
+
+async function assertRunLease(
+  db: CloudflareD1Database,
+  tables: TableSqls,
+  runId: string,
+  owner?: string,
+) {
+  if (owner === undefined) return
+  const run = await loadRunById(db, tables, runId)
+  if (run?.lease?.owner !== owner || run.lease.expiresAt <= Date.now())
+    throw new Error('Workflow run lease lost.')
 }

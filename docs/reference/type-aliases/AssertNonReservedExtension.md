@@ -9,7 +9,7 @@ title: AssertNonReservedExtension
 type AssertNonReservedExtension<TExt> = keyof TExt & ReservedCtxFields extends never ? TExt : `Middleware extension may not shadow reserved ctx field: ${keyof TExt & ReservedCtxFields & string}`;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:348](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L348)
+Defined in: [packages/workflow-core/src/types.ts:407](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L407)
 
 Compile-time guard for middleware extensions. Resolves to `TExt`
  when no reserved ctx field is shadowed; otherwise resolves to a

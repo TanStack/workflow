@@ -5,7 +5,7 @@ title: SleepOptions
 
 # Interface: SleepOptions
 
-Defined in: [packages/workflow-core/src/types.ts:279](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L279)
+Defined in: [packages/workflow-core/src/types.ts:303](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L303)
 
 ## Extends
 

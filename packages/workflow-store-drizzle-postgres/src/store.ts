@@ -5,7 +5,11 @@ import {
   qualifiedTableName,
   resolveDrizzlePostgresWorkflowStoreTables,
 } from './schema-contract'
-import type { RunState, WorkflowEvent } from '@tanstack/workflow-core'
+import type {
+  RunState,
+  SignalDelivery,
+  WorkflowEvent,
+} from '@tanstack/workflow-core'
 import type { SQL } from 'drizzle-orm'
 import type { DrizzlePostgresWorkflowStoreTables } from './schema-contract'
 import type {
@@ -139,6 +143,7 @@ export function createDrizzlePostgresWorkflowStore(
     async saveRunState(args: SaveRunStateArgs) {
       const state = args.state
       await withTransaction(db, async (tx) => {
+        await assertRunLease(tx, tableSql, state.runId, args.leaseOwner)
         await tx.execute(sql`
           insert into ${tableSql.runStates} (
             run_id,
@@ -235,6 +240,10 @@ export function createDrizzlePostgresWorkflowStore(
 
     async deleteRun(runId, _reason) {
       await withTransaction(db, async (tx) => {
+        await assertRunLease(tx, tableSql, runId)
+        await tx.execute(
+          sql`delete from ${tableSql.signalInbox} where run_id = ${runId}`,
+        )
         await tx.execute(sql`
           delete from ${tableSql.runStates}
           where run_id = ${runId}
@@ -264,6 +273,7 @@ export function createDrizzlePostgresWorkflowStore(
 
     async appendEvents(args: AppendEventsArgs): Promise<AppendEventsResult> {
       return withTransaction(db, async (tx) => {
+        await assertRunLease(tx, tableSql, args.runId, args.leaseOwner)
         await tx.execute(sql`
           insert into ${tableSql.eventLocks} (run_id, created_at)
           values (${args.runId}, ${Date.now()})
@@ -437,8 +447,15 @@ export function createDrizzlePostgresWorkflowStore(
       `)
     },
 
+    async completeTimer(args) {
+      await db.execute(
+        sql`delete from ${tableSql.timers} where run_id = ${args.runId} and signal_id = ${args.signalId}`,
+      )
+    },
+
     async scheduleTimer(args: ScheduleTimerArgs) {
       await withTransaction(db, async (tx) => {
+        await assertRunLease(tx, tableSql, args.runId, args.leaseOwner)
         await tx.execute(sql`
           insert into ${tableSql.timers} (
             run_id,
@@ -499,6 +516,80 @@ export function createDrizzlePostgresWorkflowStore(
         `,
       )
       return rows.map(timerFromRow)
+    },
+
+    async bufferSignal(args) {
+      return withTransaction(db, async (tx) => {
+        const runs = await queryRows<RunRow>(
+          tx,
+          sql`select * from ${tableSql.runs} where run_id = ${args.runId} for update`,
+        )
+        if (!runs[0]) return { kind: 'not-found' }
+        const run = runFromRow(runs[0])
+        const existing = await queryRows(
+          tx,
+          sql`select 1 from ${tableSql.signalInbox} where run_id = ${args.runId} and signal_id = ${args.delivery.signalId}`,
+        )
+        if (
+          existing.length ||
+          (await loadSignalDelivery(
+            tx,
+            tableSql,
+            args.runId,
+            args.delivery.signalId,
+          ))
+        )
+          return { kind: 'duplicate', run }
+        if (
+          ['finished', 'errored', 'aborted'].includes(run.status) ||
+          args.delivery.name === '__timer'
+        )
+          return { kind: 'not-waiting', run }
+        await tx.execute(sql`
+          insert into ${tableSql.signalInbox} (run_id, signal_id, name, step_id, delivery, created_at)
+          values (${args.runId}, ${args.delivery.signalId}, ${args.delivery.name}, ${args.delivery.stepId ?? null}, ${encodeJson(args.delivery)}::jsonb, ${args.now})
+        `)
+        return { kind: 'buffered', run }
+      })
+    },
+
+    async consumeBufferedSignal(args) {
+      return withTransaction(db, async (tx) => {
+        await assertRunLease(tx, tableSql, args.runId, args.leaseOwner)
+        const candidates = await queryRows<{ delivery: unknown }>(
+          tx,
+          sql`
+          select delivery from ${tableSql.signalInbox} inbox
+          where run_id = ${args.runId} and name = ${args.name} and (step_id is null or step_id = ${args.stepId})
+            and not exists (select 1 from ${tableSql.events} event
+              where event.run_id = inbox.run_id and event.event_type = 'SIGNAL_RESOLVED'
+                and event.event->>'signalId' = inbox.signal_id)
+          order by sequence limit 1
+        `,
+        )
+        if (!candidates[0]) return undefined
+        const delivery = decodeJson(candidates[0].delivery) as SignalDelivery
+        const event: Extract<WorkflowEvent, { type: 'SIGNAL_RESOLVED' }> = {
+          type: 'SIGNAL_RESOLVED',
+          ts: args.now,
+          stepId: args.stepId,
+          signalId: delivery.signalId,
+          name: delivery.name,
+          payload: delivery.payload,
+          meta: delivery.meta,
+        }
+        const count = await queryRows<{ count: number }>(
+          tx,
+          sql`select count(*)::int as count from ${tableSql.events} where run_id = ${args.runId}`,
+        )
+        if (count[0]?.count !== args.expectedNextIndex)
+          throw new LogConflictError(args.runId, args.expectedNextIndex)
+        await tx.execute(sql`
+          insert into ${tableSql.events} (run_id, event_index, event_type, step_id, event, created_at)
+          values (${args.runId}, ${args.expectedNextIndex}, 'SIGNAL_RESOLVED', ${args.stepId}, ${encodeJson(event)}::jsonb, ${args.now})
+        `)
+        return event
+      })
     },
 
     async deliverSignal<TPayload>(
@@ -745,9 +836,16 @@ export function createDrizzlePostgresWorkflowStore(
           with stale as (
             select run_id
             from ${tableSql.runs}
-            where status = 'running'
-              and lease_expires_at is not null
-              and lease_expires_at <= ${args.now}
+            where (lease_expires_at is null or lease_expires_at <= ${args.now})
+              and (status in ('running', 'queued') or (status = 'paused' and (
+                (wake_at <= ${args.now} and not exists (select 1 from ${tableSql.timers} timer where timer.run_id = ${tableSql.runs}.run_id and timer.wake_at = ${tableSql.runs}.wake_at))
+                or exists (select 1 from ${tableSql.signalInbox} inbox
+                  where inbox.run_id = ${tableSql.runs}.run_id
+                    and inbox.name = ${tableSql.runs}.waiting_for->>'signalName'
+                    and (inbox.step_id is null or inbox.step_id = ${tableSql.runs}.waiting_for->>'stepId')
+                    and not exists (select 1 from ${tableSql.events} event where event.run_id = inbox.run_id
+                      and event.event_type = 'SIGNAL_RESOLVED' and event.event->>'signalId' = inbox.signal_id))
+              )))
             order by updated_at asc, run_id asc
             limit ${args.limit}
             for update skip locked
@@ -805,6 +903,7 @@ interface TableSqls {
   eventLocks: SQL
   events: SQL
   timers: SQL
+  signalInbox: SQL
   signalDeliveries: SQL
   schedules: SQL
   scheduleBuckets: SQL
@@ -890,6 +989,7 @@ function tableSqls(
     eventLocks: sql.raw(qualifiedTableName(schema, tables.eventLocks)),
     events: sql.raw(qualifiedTableName(schema, tables.events)),
     timers: sql.raw(qualifiedTableName(schema, tables.timers)),
+    signalInbox: sql.raw(qualifiedTableName(schema, tables.signalInbox)),
     signalDeliveries: sql.raw(
       qualifiedTableName(schema, tables.signalDeliveries),
     ),
@@ -1210,4 +1310,23 @@ function numberOrUndefined(value: number | string | null) {
 
 function getStepId(event: WorkflowEvent) {
   return 'stepId' in event ? event.stepId : undefined
+}
+
+async function assertRunLease(
+  db: DrizzlePostgresDatabase,
+  tables: TableSqls,
+  runId: string,
+  owner?: string,
+) {
+  const rows = await queryRows<RunRow>(
+    db,
+    sql`select * from ${tables.runs} where run_id = ${runId} for update`,
+  )
+  if (
+    owner !== undefined &&
+    (rows[0]?.lease_owner !== owner ||
+      Number(rows[0].lease_expires_at) <= Date.now())
+  ) {
+    throw new Error('Workflow run lease lost.')
+  }
 }

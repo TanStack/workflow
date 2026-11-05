@@ -13,6 +13,7 @@ Defined in: [packages/workflow-core/src/types.ts:24](https://github.com/TanStack
 - [`DeterministicValueOptions`](DeterministicValueOptions.md)
 - [`SleepOptions`](SleepOptions.md)
 - [`WaitForEventOptions`](WaitForEventOptions.md)
+- [`YieldOptions`](YieldOptions.md)
 
 ## Properties
 

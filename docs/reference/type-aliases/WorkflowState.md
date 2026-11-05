@@ -9,7 +9,7 @@ title: WorkflowState
 type WorkflowState<TDefinition> = TDefinition extends WorkflowDefinition<any, any, infer TState> ? TState : never;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:456](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L456)
+Defined in: [packages/workflow-core/src/types.ts:515](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L515)
 
 ## Type Parameters
 

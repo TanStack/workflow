@@ -43,6 +43,10 @@
           "to": "guide/persistence"
         },
         {
+          "label": "Signals, retries, and compensation",
+          "to": "guide/durable-recovery"
+        },
+        {
           "label": "Observability",
           "to": "guide/observability"
         },

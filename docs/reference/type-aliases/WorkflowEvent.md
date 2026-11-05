@@ -30,6 +30,31 @@ type WorkflowEvent =
   type: "RUN_ERRORED";
 }
   | {
+  attempt: number;
+  stepId: string;
+  ts: number;
+  type: "STEP_ATTEMPT_STARTED";
+}
+  | {
+  stepId: string;
+  ts: number;
+  type: "COMPENSATION_REGISTERED";
+}
+  | {
+  error: SerializedError;
+  ts: number;
+  type: "COMPENSATION_STARTED";
+}
+  | {
+  attempt: number;
+  attempts: ReadonlyArray<StepAttempt>;
+  error: SerializedError;
+  nextAttemptAt: number;
+  stepId: string;
+  ts: number;
+  type: "STEP_RETRY_SCHEDULED";
+}
+  | {
   audience?: string;
   meta?: WorkflowMetadata;
   stepId: string;
@@ -283,6 +308,145 @@ ts: number;
 
 ```ts
 type: "RUN_ERRORED";
+```
+
+```ts
+{
+  attempt: number;
+  stepId: string;
+  ts: number;
+  type: "STEP_ATTEMPT_STARTED";
+}
+```
+
+### attempt
+
+```ts
+attempt: number;
+```
+
+### stepId
+
+```ts
+stepId: string;
+```
+
+### ts
+
+```ts
+ts: number;
+```
+
+### type
+
+```ts
+type: "STEP_ATTEMPT_STARTED";
+```
+
+```ts
+{
+  stepId: string;
+  ts: number;
+  type: "COMPENSATION_REGISTERED";
+}
+```
+
+### stepId
+
+```ts
+stepId: string;
+```
+
+### ts
+
+```ts
+ts: number;
+```
+
+### type
+
+```ts
+type: "COMPENSATION_REGISTERED";
+```
+
+```ts
+{
+  error: SerializedError;
+  ts: number;
+  type: "COMPENSATION_STARTED";
+}
+```
+
+### error
+
+```ts
+error: SerializedError;
+```
+
+### ts
+
+```ts
+ts: number;
+```
+
+### type
+
+```ts
+type: "COMPENSATION_STARTED";
+```
+
+```ts
+{
+  attempt: number;
+  attempts: ReadonlyArray<StepAttempt>;
+  error: SerializedError;
+  nextAttemptAt: number;
+  stepId: string;
+  ts: number;
+  type: "STEP_RETRY_SCHEDULED";
+}
+```
+
+### attempt
+
+```ts
+attempt: number;
+```
+
+### attempts
+
+```ts
+attempts: ReadonlyArray<StepAttempt>;
+```
+
+### error
+
+```ts
+error: SerializedError;
+```
+
+### nextAttemptAt
+
+```ts
+nextAttemptAt: number;
+```
+
+### stepId
+
+```ts
+stepId: string;
+```
+
+### ts
+
+```ts
+ts: number;
+```
+
+### type
+
+```ts
+type: "STEP_RETRY_SCHEDULED";
 ```
 
 ```ts

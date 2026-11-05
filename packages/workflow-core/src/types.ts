@@ -91,6 +91,23 @@ export type WorkflowEvent =
       code: string
       audience?: string
     }
+  | {
+      type: 'STEP_ATTEMPT_STARTED'
+      ts: number
+      stepId: string
+      attempt: number
+    }
+  | { type: 'COMPENSATION_REGISTERED'; ts: number; stepId: string }
+  | { type: 'COMPENSATION_STARTED'; ts: number; error: SerializedError }
+  | {
+      type: 'STEP_RETRY_SCHEDULED'
+      ts: number
+      stepId: string
+      attempt: number
+      nextAttemptAt: number
+      error: SerializedError
+      attempts: ReadonlyArray<StepAttempt>
+    }
   // ── Step (durable side-effect via ctx.step) ────────────────────
   | {
       type: 'STEP_STARTED'
@@ -193,13 +210,15 @@ export type WorkflowEvent =
       audience?: string
     }
 
-/** Kinds that replay treats as completion checkpoints (engine reads
- *  these from the log to short-circuit primitives). All others are
- *  observability-only. */
+/** Durable completion and recovery checkpoints used during replay. */
 export type CheckpointEvent = Extract<
   WorkflowEvent,
   {
     type:
+      | 'STEP_ATTEMPT_STARTED'
+      | 'STEP_RETRY_SCHEDULED'
+      | 'COMPENSATION_REGISTERED'
+      | 'COMPENSATION_STARTED'
       | 'STEP_FINISHED'
       | 'STEP_FAILED'
       | 'SIGNAL_RESOLVED'
@@ -235,6 +254,9 @@ export interface StepContext {
 }
 
 export interface StepRetryOptions {
+  /** Persist failed attempts and pause between retries. Requires a host that
+   * resumes timer waits. The default keeps the existing in-process retries. */
+  durable?: boolean
   /** Maximum total attempts including the first try. Must be >= 1. */
   maxAttempts: number
   /** Backoff between attempts. Default: 'exponential'. */
@@ -332,6 +354,15 @@ export interface BaseCtx<TInput, TState> {
   runtime: WorkflowRuntimeContext
 
   // ── Durable primitives (replay-aware) ────────────────────────
+  /** Register an idempotent undo handler. On an uncaught workflow failure,
+   * handlers run in reverse registration order with durable step checkpoints.
+   * Registration and captured values must be replayable. */
+  compensate: (
+    id: string,
+    fn: (ctx: StepContext) => unknown | Promise<unknown>,
+    options?: StepOptions,
+  ) => Promise<void>
+
   step: <T>(
     id: string,
     fn: (stepCtx: StepContext) => T | Promise<T>,
@@ -361,6 +392,7 @@ export type ReservedCtxFields =
   | 'signal'
   | 'runtime'
   | 'step'
+  | 'compensate'
   | 'sleep'
   | 'sleepUntil'
   | 'waitForEvent'
@@ -575,6 +607,15 @@ export interface RunState<TInput = unknown, TOutput = unknown> {
 
 export type DeleteReason = 'finished' | 'errored' | 'aborted'
 
+/** Match a buffered delivery and append its resolution at this log index. */
+export interface ConsumeBufferedSignalArgs {
+  runId: string
+  name: string
+  stepId: string
+  expectedNextIndex: number
+  now: number
+}
+
 /**
  * Pluggable backing store for workflow runs.
  *
@@ -597,6 +638,15 @@ export type DeleteReason = 'finished' | 'errored' | 'aborted'
  * polling.
  */
 export interface RunStore {
+  /** Optional host guard before fresh effects, for example after lease loss. */
+  assertHealthy?: () => void
+
+  /** Atomically append SIGNAL_RESOLVED for the oldest matching inbox entry.
+   * Keep the payload until run deletion, and never consume a signal twice. */
+  consumeBufferedSignal?: (
+    args: ConsumeBufferedSignalArgs,
+  ) => Promise<Extract<WorkflowEvent, { type: 'SIGNAL_RESOLVED' }> | undefined>
+
   // ── State (metadata snapshot) ──────────────────────────────────
   getRunState: (runId: string) => Promise<RunState | undefined>
   setRunState: (runId: string, state: RunState) => Promise<void>

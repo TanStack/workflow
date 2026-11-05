@@ -34,14 +34,15 @@ pnpm dlx wrangler d1 create tanstack-workflow-d1-poc
 
 Copy the returned `database_id` into `wrangler.toml`.
 
-The D1 binding uses `migrations_dir = "migrations"`. The demo migration is a
-copy of the package-owned artifact from:
+The D1 binding uses `migrations_dir = "migrations"`. The demo migrations are
+copies of the package-owned artifacts from:
 
 ```txt
 packages/workflow-store-cloudflare-d1/migrations/0000_workflow_store.sql
+packages/workflow-store-cloudflare-d1/migrations/0001_signal_inbox.sql
 ```
 
-Apply it locally:
+Apply them locally:
 
 ```bash
 pnpm migrate:local

@@ -5,7 +5,7 @@ title: WaitForEventOptions
 
 # Interface: WaitForEventOptions\<TPayload\>
 
-Defined in: [packages/workflow-core/src/types.ts:266](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L266)
+Defined in: [packages/workflow-core/src/types.ts:290](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L290)
 
 ## Extends
 
@@ -25,7 +25,7 @@ Defined in: [packages/workflow-core/src/types.ts:266](https://github.com/TanStac
 optional deadline: number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:271](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L271)
+Defined in: [packages/workflow-core/src/types.ts:295](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L295)
 
 UTC ms wake deadline. Surfaced on `RunState.waitingFor.deadline`
  so hosts can build time-indexed worker jobs.
@@ -56,7 +56,7 @@ reordered in a later workflow version.
 optional meta: WorkflowMetadata;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:273](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L273)
+Defined in: [packages/workflow-core/src/types.ts:297](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L297)
 
 Free-form metadata the host or UI may render.
 
@@ -72,7 +72,7 @@ Free-form metadata the host or UI may render.
 optional schema: StandardSchemaV1<unknown, TPayload>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:276](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L276)
+Defined in: [packages/workflow-core/src/types.ts:300](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L300)
 
 Optional schema for validating the incoming payload before
  resuming the workflow.

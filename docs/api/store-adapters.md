@@ -17,8 +17,8 @@ The runtime store contract includes:
 | Run lifecycle | `createRun`, `loadRun`, `loadExecution`, `markRunPaused`, `markRunFinished`, `markRunErrored` |
 | Event log | `appendEvents`, `readEvents`, optional `subscribeEvents` |
 | Leases | `claimRun`, `heartbeatRunLease`, `releaseRunLease`, `claimStaleRuns` |
-| Timers | `scheduleTimer`, `claimDueTimers` |
-| Signals | `deliverSignal` |
+| Timers | `scheduleTimer`, `claimDueTimers`, optional `completeTimer` |
+| Signals | `deliverSignal`, optional `bufferSignal` and `consumeBufferedSignal` |
 | Approvals | `deliverApproval` |
 | Schedules | `upsertSchedule`, `claimDueScheduleBuckets`, `markScheduleBucketStarted` |
 | Query | `listRuns`, `getRunTimeline` |
@@ -49,6 +49,7 @@ Apply the package-owned migration during setup/deploy:
 
 ```bash
 psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_signal_inbox.sql
 ```
 
 Use it in the runtime:
@@ -88,6 +89,7 @@ tables in application Drizzle schema files.
 
 ```bash
 psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_signal_inbox.sql
 ```
 
 Programmatic setup can use the exported migration helpers:
@@ -133,6 +135,7 @@ Apply the package-owned D1 migration during setup/deploy:
 
 ```txt
 node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0000_workflow_store.sql
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_signal_inbox.sql
 ```
 
 Programmatic setup can use the exported migration helpers:
@@ -218,3 +221,6 @@ A production store adapter should satisfy:
 - timeline and list APIs
 - migration strategy
 - tests against the shared contract suite
+
+See [Signals, retries, and compensation](../guide/durable-recovery.md) for inbox
+semantics, lease fencing, and the additive migration upgrade path.

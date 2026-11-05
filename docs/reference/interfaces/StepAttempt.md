@@ -5,7 +5,7 @@ title: StepAttempt
 
 # Interface: StepAttempt
 
-Defined in: [packages/workflow-core/src/types.ts:255](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L255)
+Defined in: [packages/workflow-core/src/types.ts:279](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L279)
 
 ## Properties
 
@@ -15,7 +15,7 @@ Defined in: [packages/workflow-core/src/types.ts:255](https://github.com/TanStac
 optional error: SerializedError;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:259](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L259)
+Defined in: [packages/workflow-core/src/types.ts:283](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L283)
 
 ***
 
@@ -25,7 +25,7 @@ Defined in: [packages/workflow-core/src/types.ts:259](https://github.com/TanStac
 finishedAt: number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:257](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L257)
+Defined in: [packages/workflow-core/src/types.ts:281](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L281)
 
 ***
 
@@ -35,7 +35,7 @@ Defined in: [packages/workflow-core/src/types.ts:257](https://github.com/TanStac
 optional result: unknown;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:258](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L258)
+Defined in: [packages/workflow-core/src/types.ts:282](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L282)
 
 ***
 
@@ -45,4 +45,4 @@ Defined in: [packages/workflow-core/src/types.ts:258](https://github.com/TanStac
 startedAt: number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:256](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L256)
+Defined in: [packages/workflow-core/src/types.ts:280](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L280)

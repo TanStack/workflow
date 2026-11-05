@@ -5,7 +5,7 @@ title: BaseCtx
 
 # Interface: BaseCtx\<TInput, TState\>
 
-Defined in: [packages/workflow-core/src/types.ts:301](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L301)
+Defined in: [packages/workflow-core/src/types.ts:347](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L347)
 
 Built-in fields on every ctx. Middleware can add fields via the
  `TExtensions` generic but cannot shadow these.
@@ -28,7 +28,7 @@ Built-in fields on every ctx. Middleware can add fields via the
 approve: (options) => Promise<ApprovalResult>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:320](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L320)
+Defined in: [packages/workflow-core/src/types.ts:377](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L377)
 
 #### Parameters
 
@@ -42,13 +42,45 @@ Defined in: [packages/workflow-core/src/types.ts:320](https://github.com/TanStac
 
 ***
 
+### compensate()
+
+```ts
+compensate: (id, fn, options?) => Promise<void>;
+```
+
+Defined in: [packages/workflow-core/src/types.ts:360](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L360)
+
+Register an idempotent undo handler. On an uncaught workflow failure,
+handlers run in reverse registration order with durable step checkpoints.
+Registration and captured values must be replayable.
+
+#### Parameters
+
+##### id
+
+`string`
+
+##### fn
+
+(`ctx`) => `unknown`
+
+##### options?
+
+[`StepOptions`](StepOptions.md)
+
+#### Returns
+
+`Promise`\<`void`\>
+
+***
+
 ### emit()
 
 ```ts
 emit: (name, value) => void;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:327](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L327)
+Defined in: [packages/workflow-core/src/types.ts:384](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L384)
 
 Emit a CUSTOM event for UI/devtools consumption. Does not enter
  the replay log.
@@ -75,7 +107,7 @@ Emit a CUSTOM event for UI/devtools consumption. Does not enter
 input: TInput;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:303](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L303)
+Defined in: [packages/workflow-core/src/types.ts:349](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L349)
 
 ***
 
@@ -85,7 +117,7 @@ Defined in: [packages/workflow-core/src/types.ts:303](https://github.com/TanStac
 now: (options?) => Promise<number>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:321](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L321)
+Defined in: [packages/workflow-core/src/types.ts:378](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L378)
 
 #### Parameters
 
@@ -105,7 +137,19 @@ Defined in: [packages/workflow-core/src/types.ts:321](https://github.com/TanStac
 runId: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:302](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L302)
+Defined in: [packages/workflow-core/src/types.ts:348](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L348)
+
+***
+
+### runtime
+
+```ts
+runtime: WorkflowRuntimeContext;
+```
+
+Defined in: [packages/workflow-core/src/types.ts:354](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L354)
+
+Current runtime-drive metadata and budget helpers.
 
 ***
 
@@ -115,7 +159,7 @@ Defined in: [packages/workflow-core/src/types.ts:302](https://github.com/TanStac
 signal: AbortSignal;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:306](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L306)
+Defined in: [packages/workflow-core/src/types.ts:352](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L352)
 
 AbortSignal for the run as a whole.
 
@@ -127,7 +171,7 @@ AbortSignal for the run as a whole.
 sleep: (ms, options?) => Promise<void>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:314](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L314)
+Defined in: [packages/workflow-core/src/types.ts:371](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L371)
 
 #### Parameters
 
@@ -151,7 +195,7 @@ Defined in: [packages/workflow-core/src/types.ts:314](https://github.com/TanStac
 sleepUntil: (timestamp, options?) => Promise<void>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:315](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L315)
+Defined in: [packages/workflow-core/src/types.ts:372](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L372)
 
 #### Parameters
 
@@ -175,7 +219,7 @@ Defined in: [packages/workflow-core/src/types.ts:315](https://github.com/TanStac
 state: TState;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:304](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L304)
+Defined in: [packages/workflow-core/src/types.ts:350](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L350)
 
 ***
 
@@ -185,7 +229,7 @@ Defined in: [packages/workflow-core/src/types.ts:304](https://github.com/TanStac
 step: <T>(id, fn, options?) => Promise<T>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:309](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L309)
+Defined in: [packages/workflow-core/src/types.ts:366](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L366)
 
 #### Type Parameters
 
@@ -219,7 +263,7 @@ Defined in: [packages/workflow-core/src/types.ts:309](https://github.com/TanStac
 uuid: (options?) => Promise<string>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:322](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L322)
+Defined in: [packages/workflow-core/src/types.ts:379](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L379)
 
 #### Parameters
 
@@ -239,7 +283,7 @@ Defined in: [packages/workflow-core/src/types.ts:322](https://github.com/TanStac
 waitForEvent: <TPayload>(name, options?) => Promise<TPayload>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:316](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L316)
+Defined in: [packages/workflow-core/src/types.ts:373](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L373)
 
 #### Type Parameters
 

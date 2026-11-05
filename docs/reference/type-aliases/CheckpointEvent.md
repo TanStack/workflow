@@ -7,7 +7,11 @@ title: CheckpointEvent
 
 ```ts
 type CheckpointEvent = Extract<WorkflowEvent, {
-  type:   | "STEP_FINISHED"
+  type:   | "STEP_ATTEMPT_STARTED"
+     | "STEP_RETRY_SCHEDULED"
+     | "COMPENSATION_REGISTERED"
+     | "COMPENSATION_STARTED"
+     | "STEP_FINISHED"
      | "STEP_FAILED"
      | "SIGNAL_RESOLVED"
      | "APPROVAL_RESOLVED"
@@ -18,8 +22,6 @@ type CheckpointEvent = Extract<WorkflowEvent, {
 }>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:199](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L199)
+Defined in: [packages/workflow-core/src/types.ts:214](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L214)
 
-Kinds that replay treats as completion checkpoints (engine reads
- these from the log to short-circuit primitives). All others are
- observability-only.
+Durable completion and recovery checkpoints used during replay.

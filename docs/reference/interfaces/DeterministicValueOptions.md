@@ -5,7 +5,7 @@ title: DeterministicValueOptions
 
 # Interface: DeterministicValueOptions
 
-Defined in: [packages/workflow-core/src/types.ts:281](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L281)
+Defined in: [packages/workflow-core/src/types.ts:305](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L305)
 
 ## Extends
 

@@ -5,7 +5,7 @@ title: LogConflictError
 
 # Class: LogConflictError
 
-Defined in: [packages/workflow-core/src/types.ts:611](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L611)
+Defined in: [packages/workflow-core/src/types.ts:688](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L688)
 
 Thrown by `RunStore.appendEvent` when another writer has already
 committed a record at the requested index. The engine catches it
@@ -27,7 +27,7 @@ new LogConflictError(
    existing?): LogConflictError;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:613](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L613)
+Defined in: [packages/workflow-core/src/types.ts:690](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L690)
 
 #### Parameters
 
@@ -61,7 +61,7 @@ Error.constructor
 readonly attemptedIndex: number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:615](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L615)
+Defined in: [packages/workflow-core/src/types.ts:692](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L692)
 
 ***
 
@@ -87,7 +87,7 @@ Error.cause
 readonly optional existing: WorkflowEvent;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:616](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L616)
+Defined in: [packages/workflow-core/src/types.ts:693](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L693)
 
 ***
 
@@ -113,7 +113,7 @@ Error.message
 readonly name: "LogConflictError" = 'LogConflictError';
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:612](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L612)
+Defined in: [packages/workflow-core/src/types.ts:689](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L689)
 
 #### Overrides
 
@@ -129,7 +129,7 @@ Error.name
 readonly runId: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:614](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L614)
+Defined in: [packages/workflow-core/src/types.ts:691](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L691)
 
 ***
 

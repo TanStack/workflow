@@ -5,7 +5,7 @@ title: ApprovalResult
 
 # Interface: ApprovalResult
 
-Defined in: [packages/workflow-core/src/types.ts:288](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L288)
+Defined in: [packages/workflow-core/src/types.ts:334](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L334)
 
 ## Properties
 
@@ -15,7 +15,7 @@ Defined in: [packages/workflow-core/src/types.ts:288](https://github.com/TanStac
 approvalId: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:290](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L290)
+Defined in: [packages/workflow-core/src/types.ts:336](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L336)
 
 ***
 
@@ -25,7 +25,7 @@ Defined in: [packages/workflow-core/src/types.ts:290](https://github.com/TanStac
 approved: boolean;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:289](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L289)
+Defined in: [packages/workflow-core/src/types.ts:335](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L335)
 
 ***
 
@@ -35,7 +35,7 @@ Defined in: [packages/workflow-core/src/types.ts:289](https://github.com/TanStac
 optional feedback: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:291](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L291)
+Defined in: [packages/workflow-core/src/types.ts:337](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L337)
 
 ***
 
@@ -45,4 +45,4 @@ Defined in: [packages/workflow-core/src/types.ts:291](https://github.com/TanStac
 optional meta: WorkflowMetadata;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:292](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L292)
+Defined in: [packages/workflow-core/src/types.ts:338](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L338)

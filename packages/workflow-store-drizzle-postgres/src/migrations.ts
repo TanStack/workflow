@@ -1,4 +1,7 @@
-import { getDrizzlePostgresWorkflowStoreSchemaStatements } from './schema-contract'
+import {
+  getDrizzlePostgresWorkflowStoreInboxSchemaStatements,
+  getDrizzlePostgresWorkflowStoreInitialSchemaStatements,
+} from './schema-contract'
 import type { DrizzlePostgresWorkflowStoreSchemaOptions } from './schema-contract'
 
 export interface DrizzlePostgresWorkflowStoreMigration {
@@ -9,12 +12,15 @@ export interface DrizzlePostgresWorkflowStoreMigration {
   sql: string
 }
 
-export const drizzlePostgresWorkflowStoreSchemaVersion = '0000_workflow_store'
+export const drizzlePostgresWorkflowStoreSchemaVersion = '0001_signal_inbox'
 
 export function getDrizzlePostgresWorkflowStoreMigrations(
   options?: DrizzlePostgresWorkflowStoreSchemaOptions,
 ): Array<DrizzlePostgresWorkflowStoreMigration> {
-  const statements = getDrizzlePostgresWorkflowStoreSchemaStatements(options)
+  const statements =
+    getDrizzlePostgresWorkflowStoreInitialSchemaStatements(options)
+  const inboxStatements =
+    getDrizzlePostgresWorkflowStoreInboxSchemaStatements(options)
 
   return [
     {
@@ -24,11 +30,20 @@ export function getDrizzlePostgresWorkflowStoreMigrations(
       statements,
       sql: `${statements.join(';\n\n')};\n`,
     },
+    {
+      id: '0001_signal_inbox',
+      name: 'Add durable signal inbox',
+      order: 1,
+      statements: inboxStatements,
+      sql: `${inboxStatements.join(';\n\n')};\n`,
+    },
   ]
 }
 
 export function getDrizzlePostgresWorkflowStoreMigrationSql(
   options?: DrizzlePostgresWorkflowStoreSchemaOptions,
 ): string {
-  return getDrizzlePostgresWorkflowStoreMigrations(options)[0]!.sql
+  return getDrizzlePostgresWorkflowStoreMigrations(options)
+    .map((migration) => migration.sql)
+    .join('\n')
 }

@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm'
 import {
   bigint,
+  bigserial,
   boolean,
   index,
   integer,
@@ -7,6 +9,7 @@ import {
   pgTable,
   primaryKey,
   text,
+  unique,
 } from 'drizzle-orm/pg-core'
 
 export const workflowSchemaMigrations = pgTable('workflow_schema_migrations', {
@@ -74,6 +77,9 @@ export const workflowEvents = pgTable(
   (table) => [
     primaryKey({ columns: [table.runId, table.eventIndex] }),
     index('workflow_events_type_idx').on(table.runId, table.eventType),
+    index('workflow_events_signal_id_idx')
+      .on(table.runId, sql`(${table.event}->>'signalId')`)
+      .where(sql`${table.eventType} = 'SIGNAL_RESOLVED'`),
   ],
 )
 
@@ -144,6 +150,30 @@ export const workflowScheduleBuckets = pgTable(
       table.status,
       table.fireAt,
       table.leaseExpiresAt,
+    ),
+  ],
+)
+
+export const workflowSignalInbox = pgTable(
+  'workflow_signal_inbox',
+  {
+    sequence: bigserial('sequence', { mode: 'number' }).primaryKey(),
+    runId: text('run_id').notNull(),
+    signalId: text('signal_id').notNull(),
+    name: text('name').notNull(),
+    stepId: text('step_id'),
+    delivery: jsonb('delivery').notNull(),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  },
+  (table) => [
+    unique('workflow_signal_inbox_run_id_signal_id_key').on(
+      table.runId,
+      table.signalId,
+    ),
+    index('workflow_signal_inbox_pending_idx').on(
+      table.runId,
+      table.name,
+      table.sequence,
     ),
   ],
 )

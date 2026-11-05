@@ -25,10 +25,11 @@ const db = drizzle(pool)
 const store = createDrizzlePostgresWorkflowStore({ db })
 ```
 
-Apply the package-owned migration during setup/deploy:
+Apply the package-owned migrations during setup/deploy:
 
 ```bash
 psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_signal_inbox.sql
 ```
 
 `store.ensureSchema()` remains available for tests, local demos, and explicit

@@ -11,7 +11,9 @@ type ReservedCtxFields =
   | "input"
   | "state"
   | "signal"
+  | "runtime"
   | "step"
+  | "compensate"
   | "sleep"
   | "sleepUntil"
   | "waitForEvent"
@@ -21,6 +23,6 @@ type ReservedCtxFields =
   | "emit";
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:331](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L331)
+Defined in: [packages/workflow-core/src/types.ts:388](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L388)
 
 Reserved field names that middleware may not override.
