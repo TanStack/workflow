@@ -84,9 +84,38 @@ async function sendReceipt(
 
 Pass the typed `ctx` to the helper — the constraint documents which middleware fields must be in scope.
 
+## Recipe: share middleware across a family of workflows
+
+Use `createWorkflowFactory` to pin shared middleware and defaults so every workflow in an app gets them without repeating `.middleware([...])` in each file.
+
+```ts
+import { createWorkflowFactory } from '@tanstack/workflow-core'
+
+export const appWorkflow = createWorkflowFactory({
+  defaultStepRetry: { maxAttempts: 3 },
+}).middleware([traced, requireUser])
+
+export const onboard = appWorkflow({ id: 'onboard' })
+  .middleware([requireEmailVerified])  // appended after factory mws
+  .handler(async (ctx) => {
+    ctx.trace; ctx.user; ctx.emailVerified  // all visible
+  })
+```
+
+Factory middleware runs first, then per-workflow middleware, then the handler. Per-workflow config wins over factory defaults when both are set.
+
+Fork a child factory with `.extend()` to layer extra middleware (and optionally override defaults) without mutating the parent:
+
+```ts
+export const paidWorkflow = appWorkflow
+  .extend({ defaultStepRetry: { maxAttempts: 5 } })
+  .middleware([requirePro])
+```
+
 ## Rules
 
 - `.middleware([a, b])` runs `a` first, then `b`, then the handler.
+- Factory middleware (`createWorkflowFactory().middleware([...])`) runs before any per-workflow middleware.
 - Each middleware must call `next()` exactly once. Twice throws `RUN_ERRORED`.
 - Middleware extensions cannot shadow reserved ctx fields (`input`, `state`, `runId`, `signal`, `step`, `sleep`, `sleepUntil`, `waitForEvent`, `approve`, `now`, `uuid`, `emit`). Type system rejects them; runtime guards too.
 
