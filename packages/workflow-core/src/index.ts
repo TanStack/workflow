@@ -16,6 +16,13 @@ export { fail, succeed } from './result'
 // ===== Engine =====
 export { runWorkflow } from './engine/run-workflow'
 export type { RunWorkflowOptions } from './engine/run-workflow'
+export { createWorkflowTelemetry } from './telemetry'
+export type {
+  WorkflowTelemetry,
+  WorkflowTelemetryOptions,
+  WorkflowTelemetrySpanContext,
+  WorkflowTelemetryStepMetaContext,
+} from './telemetry'
 export { handleWorkflowWebhook } from './engine/handle-webhook'
 export type {
   HandleWebhookOptions,
@@ -55,25 +62,34 @@ export type {
   CheckpointEvent,
   Ctx,
   DeleteReason,
+  DeterministicValueOptions,
+  DurableOperationOptions,
   InferSchema,
   Middleware,
   MiddlewareServerFn,
   ReservedCtxFields,
+  RunAwaitable,
   RunState,
   RunStatus,
   RunStore,
   SchemaInput,
   SerializedError,
+  ShouldYieldOptions,
   SignalDelivery,
+  SleepOptions,
   StepAttempt,
   StepContext,
   StepOptions,
+  StepRuntimeContext,
   StepRetryOptions,
   WaitForEventOptions,
   WorkflowCtx,
   WorkflowDefinition,
   WorkflowEvent,
   WorkflowInput,
+  WorkflowMetadata,
   WorkflowOutput,
+  WorkflowRuntimeContext,
   WorkflowState,
+  YieldOptions,
 } from './types'

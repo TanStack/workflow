@@ -5,7 +5,7 @@ title: ApprovalResult
 
 # Interface: ApprovalResult
 
-Defined in: [packages/workflow-core/src/types.ts:259](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L259)
+Defined in: [packages/workflow-core/src/types.ts:288](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L288)
 
 ## Properties
 
@@ -15,7 +15,7 @@ Defined in: [packages/workflow-core/src/types.ts:259](https://github.com/TanStac
 approvalId: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:261](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L261)
+Defined in: [packages/workflow-core/src/types.ts:290](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L290)
 
 ***
 
@@ -25,7 +25,7 @@ Defined in: [packages/workflow-core/src/types.ts:261](https://github.com/TanStac
 approved: boolean;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:260](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L260)
+Defined in: [packages/workflow-core/src/types.ts:289](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L289)
 
 ***
 
@@ -35,4 +35,14 @@ Defined in: [packages/workflow-core/src/types.ts:260](https://github.com/TanStac
 optional feedback: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:262](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L262)
+Defined in: [packages/workflow-core/src/types.ts:291](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L291)
+
+***
+
+### meta?
+
+```ts
+optional meta: WorkflowMetadata;
+```
+
+Defined in: [packages/workflow-core/src/types.ts:292](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L292)

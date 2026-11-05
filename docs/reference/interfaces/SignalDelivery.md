@@ -5,7 +5,7 @@ title: SignalDelivery
 
 # Interface: SignalDelivery\<TPayload\>
 
-Defined in: [packages/workflow-core/src/types.ts:435](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L435)
+Defined in: [packages/workflow-core/src/types.ts:465](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L465)
 
 ## Type Parameters
 
@@ -15,13 +15,25 @@ Defined in: [packages/workflow-core/src/types.ts:435](https://github.com/TanStac
 
 ## Properties
 
+### meta?
+
+```ts
+optional meta: WorkflowMetadata;
+```
+
+Defined in: [packages/workflow-core/src/types.ts:476](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L476)
+
+Free-form host/UI metadata copied into SIGNAL_RESOLVED.
+
+***
+
 ### name
 
 ```ts
 name: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:441](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L441)
+Defined in: [packages/workflow-core/src/types.ts:473](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L473)
 
 Name of the awaited signal (the same name passed to
  `ctx.waitForEvent(name, ...)`).
@@ -34,7 +46,7 @@ Name of the awaited signal (the same name passed to
 payload: TPayload;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:442](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L442)
+Defined in: [packages/workflow-core/src/types.ts:474](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L474)
 
 ***
 
@@ -44,7 +56,19 @@ Defined in: [packages/workflow-core/src/types.ts:442](https://github.com/TanStac
 signalId: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:438](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L438)
+Defined in: [packages/workflow-core/src/types.ts:468](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L468)
 
 Idempotency token. Same signalId at the same stepId = no-op
  retry; different signalId = lost race.
+
+***
+
+### stepId?
+
+```ts
+optional stepId: string;
+```
+
+Defined in: [packages/workflow-core/src/types.ts:470](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L470)
+
+Optional durable-operation id for the awaited signal.

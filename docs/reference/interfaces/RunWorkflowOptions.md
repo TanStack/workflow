@@ -5,7 +5,7 @@ title: RunWorkflowOptions
 
 # Interface: RunWorkflowOptions
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:25](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L25)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:27](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L27)
 
 ## Properties
 
@@ -15,7 +15,7 @@ Defined in: [packages/workflow-core/src/engine/run-workflow.ts:25](https://githu
 optional approval: ApprovalResult;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:33](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L33)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:35](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L35)
 
 ***
 
@@ -25,7 +25,7 @@ Defined in: [packages/workflow-core/src/engine/run-workflow.ts:33](https://githu
 optional attach: boolean;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:35](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L35)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:37](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L37)
 
 Read-only subscription to an existing run.
 
@@ -37,7 +37,7 @@ Read-only subscription to an existing run.
 optional input: unknown;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:30](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L30)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:32](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L32)
 
 Start: provide `input`. Resume: provide `runId` plus a delivery
  (`signalDelivery` or `approval`). Attach: `runId` + `attach: true`.
@@ -50,7 +50,7 @@ Start: provide `input`. Resume: provide `runId` plus a delivery
 optional outputSink: (output) => void;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:46](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L46)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:48](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L48)
 
 Called with the workflow's final output before the run record is
  cleaned up.
@@ -73,7 +73,7 @@ Called with the workflow's final output before the run record is
 optional publish: (runId, event) => void | Promise<void>;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:43](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L43)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:45](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L45)
 
 Hook called for every event the engine appends. Hosts wire this
  to a fan-out transport (Redis, Durable Streams, EventBridge) so
@@ -101,7 +101,7 @@ Hook called for every event the engine appends. Hosts wire this
 optional runId: string;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:31](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L31)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:33](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L33)
 
 ***
 
@@ -111,7 +111,7 @@ Defined in: [packages/workflow-core/src/engine/run-workflow.ts:31](https://githu
 runStore: RunStore;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:27](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L27)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:29](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L29)
 
 ***
 
@@ -121,7 +121,7 @@ Defined in: [packages/workflow-core/src/engine/run-workflow.ts:27](https://githu
 optional signal: AbortSignal;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:37](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L37)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:39](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L39)
 
 External cancellation.
 
@@ -133,7 +133,7 @@ External cancellation.
 optional signalDelivery: SignalDelivery<unknown>;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:32](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L32)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:34](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L34)
 
 ***
 
@@ -143,7 +143,7 @@ Defined in: [packages/workflow-core/src/engine/run-workflow.ts:32](https://githu
 optional threadId: string;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:39](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L39)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:41](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L41)
 
 Thread ID for client-side correlation.
 
@@ -155,4 +155,4 @@ Thread ID for client-side correlation.
 workflow: AnyWorkflowDefinition;
 ```
 
-Defined in: [packages/workflow-core/src/engine/run-workflow.ts:26](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L26)
+Defined in: [packages/workflow-core/src/engine/run-workflow.ts:28](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/engine/run-workflow.ts#L28)

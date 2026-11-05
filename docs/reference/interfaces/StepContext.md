@@ -5,7 +5,7 @@ title: StepContext
 
 # Interface: StepContext
 
-Defined in: [packages/workflow-core/src/types.ts:203](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L203)
+Defined in: [packages/workflow-core/src/types.ts:224](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L224)
 
 Passed to a `ctx.step()` function. The deterministic `id` is the
 idempotency-key candidate for external systems — it stays the same
@@ -20,7 +20,7 @@ of the same run.
 attempt: number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:207](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L207)
+Defined in: [packages/workflow-core/src/types.ts:228](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L228)
 
 Current attempt number (1-indexed).
 
@@ -32,7 +32,7 @@ Current attempt number (1-indexed).
 id: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:205](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L205)
+Defined in: [packages/workflow-core/src/types.ts:226](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L226)
 
 Deterministic step ID. Stable across retries and replays.
 
@@ -44,7 +44,7 @@ Deterministic step ID. Stable across retries and replays.
 signal: AbortSignal;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:211](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L211)
+Defined in: [packages/workflow-core/src/types.ts:232](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L232)
 
 Per-attempt AbortSignal. Fires on:
   - step timeout firing

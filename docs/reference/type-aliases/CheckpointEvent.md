@@ -18,7 +18,7 @@ type CheckpointEvent = Extract<WorkflowEvent, {
 }>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:178](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L178)
+Defined in: [packages/workflow-core/src/types.ts:199](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L199)
 
 Kinds that replay treats as completion checkpoints (engine reads
  these from the log to short-circuit primitives). All others are

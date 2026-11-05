@@ -33,6 +33,14 @@ describe('ctx.waitForEvent()', () => {
 
     const runState = await store.getRunState(runId)
     expect(runState?.status).toBe('paused')
+    expect(runState?.awaiting).toEqual([
+      {
+        type: 'signal',
+        stepId: awaited && 'stepId' in awaited ? awaited.stepId : undefined,
+        signalName: 'webhook-received',
+        meta: { source: 'stripe' },
+      },
+    ])
     expect(runState?.waitingFor?.signalName).toBe('webhook-received')
     expect(runState?.waitingFor?.meta).toEqual({ source: 'stripe' })
   })
@@ -69,6 +77,70 @@ describe('ctx.waitForEvent()', () => {
 
     expect(phase2.find((e) => e.type === 'RUN_FINISHED')).toMatchObject({
       output: { payload: { ok: true, n: 42 } },
+    })
+  })
+
+  it('persists explicit wait ids and can target delivery by stepId', async () => {
+    const wf = createWorkflow({
+      id: 'signal-explicit-id',
+      output: z.object({ payload: z.any() }),
+    }).handler(async (ctx) => {
+      const payload = await ctx.waitForEvent<{ ok: boolean }>('thing', {
+        id: 'payment-webhook',
+        meta: { source: 'stripe' },
+      })
+      return { payload }
+    })
+
+    const store = inMemoryRunStore()
+    const phase1 = await collect(
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
+    )
+    const runId = findRunId(phase1)
+
+    const awaited = phase1.find((e) => e.type === 'SIGNAL_AWAITED')
+    expect(awaited).toMatchObject({
+      stepId: 'payment-webhook',
+      name: 'thing',
+      meta: { source: 'stripe' },
+    })
+
+    const runState = await store.getRunState(runId)
+    expect(runState?.awaiting).toEqual([
+      {
+        type: 'signal',
+        stepId: 'payment-webhook',
+        signalName: 'thing',
+        meta: { source: 'stripe' },
+      },
+    ])
+    expect(runState?.waitingFor).toMatchObject({
+      stepId: 'payment-webhook',
+      signalName: 'thing',
+      meta: { source: 'stripe' },
+    })
+
+    const phase2 = await collect(
+      runWorkflow({
+        workflow: wf,
+        runId,
+        signalDelivery: {
+          signalId: 'sig-1',
+          stepId: 'payment-webhook',
+          name: 'thing',
+          payload: { ok: true },
+          meta: { delivery: 'webhook-evt-1' },
+        },
+        runStore: store,
+      }),
+    )
+
+    expect(phase2.find((e) => e.type === 'SIGNAL_RESOLVED')).toMatchObject({
+      stepId: 'payment-webhook',
+      meta: { delivery: 'webhook-evt-1' },
+    })
+    expect(phase2.find((e) => e.type === 'RUN_FINISHED')).toMatchObject({
+      output: { payload: { ok: true } },
     })
   })
 
@@ -164,6 +236,49 @@ describe('ctx.sleep() / ctx.sleepUntil()', () => {
 
     const awaited = phase1.find((e) => e.type === 'SIGNAL_AWAITED')
     expect(awaited).toMatchObject({ name: '__timer', deadline: wakeAt })
+  })
+
+  it('uses explicit ids and metadata for sleep operations', async () => {
+    const wakeAt = Date.now() + 60_000
+
+    const wf = createWorkflow({ id: 'sleep-id-meta' }).handler(async (ctx) => {
+      await ctx.sleepUntil(wakeAt, {
+        id: 'cooldown',
+        meta: { reason: 'rate-limit' },
+      })
+      return {}
+    })
+
+    const store = inMemoryRunStore()
+    const phase1 = await collect(
+      runWorkflow({ workflow: wf, input: {}, runStore: store }),
+    )
+    const runId = findRunId(phase1)
+
+    const awaited = phase1.find((e) => e.type === 'SIGNAL_AWAITED')
+    expect(awaited).toMatchObject({
+      stepId: 'cooldown',
+      name: '__timer',
+      deadline: wakeAt,
+      meta: { reason: 'rate-limit' },
+    })
+
+    const runState = await store.getRunState(runId)
+    expect(runState?.awaiting).toEqual([
+      {
+        type: 'signal',
+        stepId: 'cooldown',
+        signalName: '__timer',
+        deadline: wakeAt,
+        meta: { reason: 'rate-limit' },
+      },
+    ])
+    expect(runState?.waitingFor).toMatchObject({
+      stepId: 'cooldown',
+      signalName: '__timer',
+      deadline: wakeAt,
+      meta: { reason: 'rate-limit' },
+    })
   })
 
   it('resumes when the host delivers a __timer signal (void payload)', async () => {

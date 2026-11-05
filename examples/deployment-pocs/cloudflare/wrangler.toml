@@ -1,0 +1,14 @@
+name = "tanstack-workflow-cloudflare-poc"
+main = "src/worker.ts"
+compatibility_date = "2026-05-25"
+
+[triggers]
+crons = ["* * * * *", "*/5 * * * *"]
+
+[[durable_objects.bindings]]
+name = "WORKFLOW_STORE"
+class_name = "WorkflowStoreObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WorkflowStoreObject"]

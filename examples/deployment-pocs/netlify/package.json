@@ -1,0 +1,13 @@
+{
+  "name": "tanstack-workflow-netlify-poc",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tanstack/workflow-core": "^0.0.2"
+  },
+  "devDependencies": {
+    "@netlify/functions": "latest",
+    "@types/node": "latest",
+    "typescript": "6.0.3"
+  }
+}

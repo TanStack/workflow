@@ -5,7 +5,7 @@ title: StepTimeoutError
 
 # Class: StepTimeoutError
 
-Defined in: [packages/workflow-core/src/types.ts:567](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L567)
+Defined in: [packages/workflow-core/src/types.ts:626](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L626)
 
 Thrown when a `ctx.step()` with `{ timeout }` exceeds its
  wall-clock budget on a given attempt.
@@ -22,7 +22,7 @@ Thrown when a `ctx.step()` with `{ timeout }` exceeds its
 new StepTimeoutError(stepId, timeoutMs): StepTimeoutError;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:569](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L569)
+Defined in: [packages/workflow-core/src/types.ts:628](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L628)
 
 #### Parameters
 
@@ -84,7 +84,7 @@ Error.message
 readonly name: "StepTimeoutError" = 'StepTimeoutError';
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:568](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L568)
+Defined in: [packages/workflow-core/src/types.ts:627](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L627)
 
 #### Overrides
 
@@ -116,7 +116,7 @@ Error.stack
 readonly stepId: string;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:570](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L570)
+Defined in: [packages/workflow-core/src/types.ts:629](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L629)
 
 ***
 
@@ -126,4 +126,4 @@ Defined in: [packages/workflow-core/src/types.ts:570](https://github.com/TanStac
 readonly timeoutMs: number;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:571](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L571)
+Defined in: [packages/workflow-core/src/types.ts:630](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L630)

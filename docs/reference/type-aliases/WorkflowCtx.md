@@ -9,7 +9,7 @@ title: WorkflowCtx
 type WorkflowCtx<TExtensions> = Ctx<any, any, TExtensions>;
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:350](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L350)
+Defined in: [packages/workflow-core/src/types.ts:380](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L380)
 
 Helper alias for typing functions that only care about middleware
 extensions — not the calling workflow's specific input / state

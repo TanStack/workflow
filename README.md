@@ -61,8 +61,12 @@ for await (const event of runWorkflow({
 ## Packages
 
 - `@tanstack/workflow-core`: engine, workflow builder, middleware, event types, request parsing helpers, version routing, and in-memory `RunStore`.
+- `@tanstack/workflow-runtime`: registered workflows, durable execution store contract, timers, schedules, leases, signals, approvals, and bounded sweeps.
+- `@tanstack/workflow-store-drizzle-postgres`: Drizzle/Postgres implementation of the runtime execution store.
+- `@tanstack/workflow-vercel`: Vercel route handler and cron config helper for runtime sweeps.
+- `@tanstack/workflow-netlify`: Netlify Scheduled Function handler and config helper for runtime sweeps.
 
-Storage adapters, framework bindings, and devtools are planned as follow-up packages.
+Framework bindings and devtools are planned as follow-up packages.
 
 ## Development
 
@@ -77,8 +81,12 @@ pnpm test
 ## Docs
 
 - [Overview](./docs/overview.md)
+- [Comparison](./docs/comparison.md)
 - [Installation](./docs/installation.md)
 - [Quick start](./docs/quick-start.md)
+- [Guide](./docs/guide/index.md)
+- [Cookbook](./docs/cookbook/index.md)
+- [API reference](./docs/api/index.md)
 - [Primitives](./docs/concepts/primitives.md)
 - [Replay and resume](./docs/concepts/replay-and-resume.md)
 - [Scheduling](./docs/concepts/scheduling.md)

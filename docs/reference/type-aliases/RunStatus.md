@@ -9,4 +9,4 @@ title: RunStatus
 type RunStatus = "running" | "paused" | "finished" | "errored" | "aborted";
 ```
 
-Defined in: [packages/workflow-core/src/types.ts:449](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L449)
+Defined in: [packages/workflow-core/src/types.ts:483](https://github.com/TanStack/workflow/blob/main/packages/workflow-core/src/types.ts#L483)

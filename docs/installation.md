@@ -1,10 +1,21 @@
-# Installation
+---
+id: installation
+title: Installation
+---
 
 ```bash
 pnpm add @tanstack/workflow-core
 ```
 
 Install `zod` or another [Standard Schema](https://github.com/standard-schema/standard-schema) library if you use `input` / `output` / `state` / `waitForEvent({ schema })` validation.
+
+## Runtime
+
+For registered workflows, schedules, timers, leases, and host sweeps:
+
+```bash
+pnpm add @tanstack/workflow-core @tanstack/workflow-runtime
+```
 
 ## Storage
 
@@ -15,7 +26,47 @@ import { inMemoryRunStore } from '@tanstack/workflow-core'
 const runStore = inMemoryRunStore({ ttl: 60 * 60 * 1000 }) // 1h, paused runs exempt
 ```
 
-Durable adapters (Postgres, SQLite, D1, Durable Objects, Redis) are forthcoming as `@tanstack/workflow-*` packages.
+The production runtime uses a richer `WorkflowExecutionStore`. For local tests:
+
+```ts
+import { inMemoryWorkflowExecutionStore } from '@tanstack/workflow-runtime'
+
+const store = inMemoryWorkflowExecutionStore()
+```
+
+For Postgres:
+
+```bash
+pnpm add @tanstack/workflow-store-drizzle-postgres drizzle-orm pg
+```
+
+```ts
+import { createDrizzlePostgresWorkflowStore } from '@tanstack/workflow-store-drizzle-postgres'
+
+const store = createDrizzlePostgresWorkflowStore({ db })
+```
+
+Apply the package-owned store migration during setup/deploy:
+
+```bash
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+```
+
+For Cloudflare D1:
+
+```bash
+pnpm add @tanstack/workflow-store-cloudflare-d1
+```
+
+```ts
+import { createCloudflareD1WorkflowStore } from '@tanstack/workflow-store-cloudflare-d1'
+
+const store = createCloudflareD1WorkflowStore({ db: env.WORKFLOW_DB })
+```
+
+Copy or reference the package-owned SQL artifact from
+`node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0000_workflow_store.sql`
+in your D1 migration flow.
 
 ## Server framework
 
@@ -25,6 +76,41 @@ Engine is framework-agnostic. Two entry points:
 - `handleWorkflowWebhook({...})` — stateless one-invocation drive. Returns the appended events.
 
 Use either with TanStack Start server functions, Hono, Express, Cloudflare Workers, AWS Lambda — anything that can receive an HTTP request.
+
+The runtime adds:
+
+- `runtime.startRun(...)`
+- `runtime.deliverSignal(...)`
+- `runtime.deliverApproval(...)`
+- `runtime.sweep(...)`
+
+## Host adapters
+
+For Netlify:
+
+```bash
+pnpm add @tanstack/workflow-netlify
+```
+
+For Cloudflare:
+
+```bash
+pnpm add @tanstack/workflow-cloudflare
+```
+
+For Railway:
+
+```bash
+pnpm add @tanstack/workflow-railway
+```
+
+For Vercel:
+
+```bash
+pnpm add @tanstack/workflow-vercel
+```
+
+See the [Deployment guide](guide/deployment.md) for full setup.
 
 ## Framework bindings
 
