@@ -907,15 +907,31 @@ async function prepareRunDelivery<
     { runId },
     () => config.store.loadRun(runId),
   )
-  if (!run) return {}
+  if (!run) {
+    return {
+      rejected: { kind: 'not-found', runId, events: [], eventCount: 0 },
+    }
+  }
+  if (
+    run.status === 'finished' ||
+    run.status === 'errored' ||
+    run.status === 'aborted'
+  ) {
+    return {}
+  }
 
+  const state = await traceStoreOperation(
+    telemetry,
+    'store.load_run_state',
+    { runId },
+    () => config.store.loadRunState(runId),
+  )
+  const version = state?.workflowVersion ?? run.workflowVersion
   const workflow = await loadWorkflow(config, run.workflowId)
   if (
-    !run.workflowVersion ||
-    workflow.version === run.workflowVersion ||
-    workflow.previousVersions?.some(
-      (previous) => previous.version === run.workflowVersion,
-    )
+    !version ||
+    workflow.version === version ||
+    workflow.previousVersions?.some((previous) => previous.version === version)
   ) {
     return { workflow }
   }

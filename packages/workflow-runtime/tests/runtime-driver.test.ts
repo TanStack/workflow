@@ -778,6 +778,66 @@ describe('workflow runtime driver', () => {
     expect(resumed.kind).toBe('completed')
   })
 
+  it('checks replay state when the execution summary has no version', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'legacy-summary', version }).handler(async (ctx) =>
+        ctx.waitForEvent('go', { id: 'go' }),
+      )
+    const old = defineWorkflowRuntime({
+      store,
+      workflows: { 'legacy-summary': { load: async () => define('v1') } },
+    })
+    await old.startRun({
+      workflowId: 'legacy-summary',
+      runId: 'legacy',
+      input: {},
+    })
+    const loadRun = store.loadRun.bind(store)
+    vi.spyOn(store, 'loadRun').mockImplementation(async (runId) => {
+      const run = await loadRun(runId)
+      return run ? { ...run, workflowVersion: undefined } : undefined
+    })
+    const current = defineWorkflowRuntime({
+      store,
+      workflows: { 'legacy-summary': { load: async () => define('v2') } },
+    })
+    const delivery = {
+      runId: 'legacy',
+      signalId: 'go-1',
+      name: 'go',
+      stepId: 'go',
+      payload: true,
+    }
+    expect((await current.deliverSignal(delivery)).kind).toBe(
+      'version-mismatch',
+    )
+    expect((await store.loadRun('legacy'))?.status).toBe('paused')
+    expect((await old.deliverSignal(delivery)).kind).toBe('completed')
+  })
+
+  it('preserves duplicate delivery results after a workflow is unregistered', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const workflow = createWorkflow({ id: 'retired', version: 'v1' }).handler(
+      async (ctx) => ctx.waitForEvent('go', { id: 'go' }),
+    )
+    const old = defineWorkflowRuntime({
+      store,
+      workflows: { retired: { load: async () => workflow } },
+    })
+    await old.startRun({ workflowId: 'retired', runId: 'retired', input: {} })
+    const delivery = {
+      runId: 'retired',
+      signalId: 'go-1',
+      name: 'go',
+      stepId: 'go',
+      payload: true,
+    }
+    expect((await old.deliverSignal(delivery)).kind).toBe('completed')
+    const current = defineWorkflowRuntime({ store, workflows: {} })
+    expect((await current.deliverSignal(delivery)).kind).toBe('duplicate')
+  })
+
   it('rejects an approval for an unregistered version without consuming it', async () => {
     const store = inMemoryWorkflowExecutionStore()
     const define = (version: string) =>
@@ -857,7 +917,8 @@ describe('workflow runtime driver', () => {
     const store = inMemoryWorkflowExecutionStore()
     const define = (version: string) =>
       createWorkflow({ id: 'migrated', version }).handler(async (ctx) => {
-        return ctx.waitForEvent<{ ok: boolean }>('go', { id: 'go' })
+        await ctx.waitForEvent<{ ok: boolean }>('go', { id: 'go' })
+        return { version }
       })
     const v1 = defineWorkflowRuntime({
       store,
@@ -889,6 +950,7 @@ describe('workflow runtime driver', () => {
     })
 
     expect(resumed.kind).toBe('completed')
+    expect(resumed.run?.output).toEqual({ version: 'v1' })
   })
 
   it('executes the same workflow definition that passed the delivery check', async () => {
