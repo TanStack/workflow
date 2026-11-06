@@ -445,6 +445,7 @@ export type WorkflowRuntimeRunResultKind =
   | 'not-claimable'
   | 'not-waiting'
   | 'duplicate'
+  | 'version-mismatch'
 
 export interface WorkflowRuntimeRunResult {
   kind: WorkflowRuntimeRunResultKind

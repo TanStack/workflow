@@ -73,12 +73,11 @@ export default {
       }
 
       if (url.pathname === '/signals/payment' && request.method === 'POST') {
-        return json(
-          await deliverPayment(
-            runtime,
-            await readJson<PaymentSignalBody>(request),
-          ),
+        const result = await deliverPayment(
+          runtime,
+          await readJson<PaymentSignalBody>(request),
         )
+        return json(result, result.kind === 'version-mismatch' ? 503 : 200)
       }
 
       if (url.pathname === '/sweep' && request.method === 'POST') {

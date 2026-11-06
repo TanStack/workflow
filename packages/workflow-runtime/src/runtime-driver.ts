@@ -212,6 +212,14 @@ async function deliverSignal<
         args.minYieldRemainingMs,
       )
       const leaseMs = resolveLeaseMs(config, args.leaseMs)
+      const prepared = await prepareRunDelivery(config, telemetry, args.runId)
+      if (prepared.rejected) {
+        span.setAttribute(
+          'tanstack.workflow.result_kind',
+          prepared.rejected.kind,
+        )
+        return prepared.rejected
+      }
       const delivery = {
         signalId: args.signalId,
         stepId: args.stepId,
@@ -236,7 +244,9 @@ async function deliverSignal<
         return result
       }
 
-      const workflow = await loadWorkflow(config, delivered.run.workflowId)
+      const workflow =
+        prepared.workflow ??
+        (await loadWorkflow(config, delivered.run.workflowId))
       const result = await driveClaimedRun(config, telemetry, {
         workflow,
         workflowId: delivered.run.workflowId,
@@ -279,6 +289,8 @@ async function deliverSignalFromRuntime<
     args.minYieldRemainingMs,
   )
   const leaseMs = resolveLeaseMs(config, args.leaseMs)
+  const prepared = await prepareRunDelivery(config, telemetry, args.runId)
+  if (prepared.rejected) return prepared.rejected
   const delivery = {
     signalId: args.signalId,
     stepId: args.stepId,
@@ -301,7 +313,8 @@ async function deliverSignalFromRuntime<
     return resultFromSignalDelivery(args.runId, delivered)
   }
 
-  const workflow = await loadWorkflow(config, delivered.run.workflowId)
+  const workflow =
+    prepared.workflow ?? (await loadWorkflow(config, delivered.run.workflowId))
   return driveClaimedRun(config, telemetry, {
     workflow,
     workflowId: delivered.run.workflowId,
@@ -338,6 +351,14 @@ async function deliverApproval<
         args.minYieldRemainingMs,
       )
       const leaseMs = resolveLeaseMs(config, args.leaseMs)
+      const prepared = await prepareRunDelivery(config, telemetry, args.runId)
+      if (prepared.rejected) {
+        span.setAttribute(
+          'tanstack.workflow.result_kind',
+          prepared.rejected.kind,
+        )
+        return prepared.rejected
+      }
       const delivered = await traceStoreOperation(
         telemetry,
         'store.deliver_approval',
@@ -355,7 +376,9 @@ async function deliverApproval<
         return result
       }
 
-      const workflow = await loadWorkflow(config, delivered.run.workflowId)
+      const workflow =
+        prepared.workflow ??
+        (await loadWorkflow(config, delivered.run.workflowId))
       const result = await driveClaimedRun(config, telemetry, {
         workflow,
         workflowId: delivered.run.workflowId,
@@ -419,6 +442,8 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
       const recovered: Array<WorkflowRuntimeRunResult> = []
       const scheduled: Array<WorkflowRuntimeRunResult> = []
       const timers: Array<WorkflowRuntimeRunResult> = []
+      const seenTimers = new Set<string>()
+      let rejectedTimer = false
       let deadlineReached = false
 
       while (recovered.length < maxRecoveredRuns) {
@@ -554,7 +579,6 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
           deadlineReached = true
           break
         }
-
         const dueTimers = await traceStoreOperation(
           telemetry,
           'store.claim_due_timers',
@@ -562,16 +586,23 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
           () =>
             config.store.claimDueTimers({
               now,
-              limit: 1,
+              limit: maxTimers,
               leaseOwner,
               leaseMs,
             }),
         )
-        const timer = dueTimers[0]
-        if (!timer) break
-
-        timers.push(
-          await deliverTimer(config, telemetry, {
+        let advanced = false
+        for (const timer of dueTimers) {
+          const timerKey = JSON.stringify([timer.runId, timer.signalId])
+          if (seenTimers.has(timerKey)) continue
+          if (timers.length >= maxTimers) break
+          if (shouldStopForDeadline(deadline, minYieldRemainingMs)) {
+            deadlineReached = true
+            break
+          }
+          seenTimers.add(timerKey)
+          advanced = true
+          const result = await deliverTimer(config, telemetry, {
             timer,
             now,
             leaseOwner,
@@ -582,8 +613,11 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
             minYieldRemainingMs,
             yieldResumeAt: now + 1,
             publish: args.publish,
-          }),
-        )
+          })
+          if (result.kind === 'version-mismatch') rejectedTimer = true
+          timers.push(result)
+        }
+        if (!advanced || deadlineReached) break
       }
 
       const result = {
@@ -593,6 +627,7 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
         summary: summarizeSweep(recovered, scheduled, timers),
         deadlineReached,
         remainingMayExist:
+          rejectedTimer ||
           deadlineReached ||
           recovered.length >= maxRecoveredRuns ||
           scheduled.length >= maxScheduledRuns ||
@@ -851,6 +886,66 @@ async function syncTimerFromRunState<
         now,
       }),
   )
+}
+
+// Deliveries are checked before the store consumes them: once consumed,
+// a run whose version this runtime can't replay would be left `running`
+// with no lease and nothing awaited, and redelivery would be refused.
+async function prepareRunDelivery<
+  TWorkflows extends Record<string, WorkflowRegistration>,
+>(
+  config: WorkflowRuntimeConfig<TWorkflows>,
+  telemetry: WorkflowTelemetry,
+  runId: string,
+): Promise<{
+  workflow?: AnyWorkflowDefinition
+  rejected?: WorkflowRuntimeRunResult
+}> {
+  const run = await traceStoreOperation(
+    telemetry,
+    'store.load_run',
+    { runId },
+    () => config.store.loadRun(runId),
+  )
+  if (!run) {
+    return {
+      rejected: { kind: 'not-found', runId, events: [], eventCount: 0 },
+    }
+  }
+  if (
+    run.status === 'finished' ||
+    run.status === 'errored' ||
+    run.status === 'aborted'
+  ) {
+    return {}
+  }
+
+  const state = await traceStoreOperation(
+    telemetry,
+    'store.load_run_state',
+    { runId },
+    () => config.store.loadRunState(runId),
+  )
+  const version = state?.workflowVersion ?? run.workflowVersion
+  const workflow = await loadWorkflow(config, run.workflowId)
+  if (
+    !version ||
+    workflow.version === version ||
+    workflow.previousVersions?.some((previous) => previous.version === version)
+  ) {
+    return { workflow }
+  }
+
+  return {
+    rejected: {
+      kind: 'version-mismatch',
+      runId,
+      workflowId: run.workflowId,
+      run,
+      events: [],
+      eventCount: 0,
+    },
+  }
 }
 
 async function loadWorkflow<
