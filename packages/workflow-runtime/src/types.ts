@@ -143,7 +143,18 @@ export interface ScheduleTimerArgs {
   now: number
 }
 
+export type TimerCursor = Pick<TimerWakeup, 'wakeAt' | 'runId' | 'signalId'>
+
+export interface ReleaseTimerLeaseArgs {
+  runId: RunId
+  signalId: string
+  leaseOwner: LeaseOwner
+  leaseExpiresAt: number
+}
+
 export interface ClaimDueTimersArgs {
+  /** Only claim timers strictly after this cursor, in wakeAt/runId/signalId order. */
+  after?: TimerCursor
   now: number
   limit: number
   leaseOwner: LeaseOwner
@@ -320,6 +331,7 @@ export interface WorkflowExecutionStore extends WorkflowRunStoreAdapterStore {
   claimDueTimers: (
     args: ClaimDueTimersArgs,
   ) => Promise<ReadonlyArray<TimerWakeup>>
+  releaseTimerLease: (args: ReleaseTimerLeaseArgs) => Promise<void>
   deliverSignal: <TPayload = unknown>(
     args: DeliverSignalArgs<TPayload>,
   ) => Promise<DeliverSignalResult>

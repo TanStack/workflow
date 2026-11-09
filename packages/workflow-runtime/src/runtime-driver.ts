@@ -442,7 +442,8 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
       const recovered: Array<WorkflowRuntimeRunResult> = []
       const scheduled: Array<WorkflowRuntimeRunResult> = []
       const timers: Array<WorkflowRuntimeRunResult> = []
-      const seenTimers = new Set<string>()
+      let timerCursor: TimerWakeup | undefined
+      let processedTimers = 0
       let rejectedTimer = false
       let deadlineReached = false
 
@@ -574,7 +575,7 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
         scheduled.push(result)
       }
 
-      while (timers.length < maxTimers) {
+      while (processedTimers < maxTimers) {
         if (shouldStopForDeadline(deadline, minYieldRemainingMs)) {
           deadlineReached = true
           break
@@ -586,38 +587,50 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
           () =>
             config.store.claimDueTimers({
               now,
-              limit: maxTimers,
+              limit: maxTimers - processedTimers,
+              after: timerCursor,
               leaseOwner,
               leaseMs,
             }),
         )
-        let advanced = false
-        for (const timer of dueTimers) {
-          const timerKey = JSON.stringify([timer.runId, timer.signalId])
-          if (seenTimers.has(timerKey)) continue
-          if (timers.length >= maxTimers) break
-          if (shouldStopForDeadline(deadline, minYieldRemainingMs)) {
-            deadlineReached = true
-            break
+        if (dueTimers.length === 0) break
+        try {
+          for (const timer of dueTimers) {
+            if (processedTimers >= maxTimers) break
+            if (shouldStopForDeadline(deadline, minYieldRemainingMs)) {
+              deadlineReached = true
+              break
+            }
+            timerCursor = timer
+            const result = await deliverTimer(config, telemetry, {
+              timer,
+              now,
+              leaseOwner,
+              leaseMs,
+              includeEvents: args.includeEvents,
+              maxEvents: args.maxEvents,
+              deadline,
+              minYieldRemainingMs,
+              yieldResumeAt: now + 1,
+              publish: args.publish,
+            })
+            if (result.kind === 'version-mismatch') rejectedTimer = true
+            else processedTimers++
+            timers.push(result)
           }
-          seenTimers.add(timerKey)
-          advanced = true
-          const result = await deliverTimer(config, telemetry, {
-            timer,
-            now,
-            leaseOwner,
-            leaseMs,
-            includeEvents: args.includeEvents,
-            maxEvents: args.maxEvents,
-            deadline,
-            minYieldRemainingMs,
-            yieldResumeAt: now + 1,
-            publish: args.publish,
-          })
-          if (result.kind === 'version-mismatch') rejectedTimer = true
-          timers.push(result)
+        } finally {
+          await Promise.all(
+            dueTimers.map((timer) =>
+              config.store.releaseTimerLease({
+                runId: timer.runId,
+                signalId: timer.signalId,
+                leaseOwner,
+                leaseExpiresAt: now + leaseMs,
+              }),
+            ),
+          )
         }
-        if (!advanced || deadlineReached) break
+        if (deadlineReached) break
       }
 
       const result = {

@@ -17,7 +17,7 @@ The runtime store contract includes:
 | Run lifecycle | `createRun`, `loadRun`, `loadExecution`, `markRunPaused`, `markRunFinished`, `markRunErrored` |
 | Event log | `appendEvents`, `readEvents`, optional `subscribeEvents` |
 | Leases | `claimRun`, `heartbeatRunLease`, `releaseRunLease`, `claimStaleRuns` |
-| Timers | `scheduleTimer`, `claimDueTimers` |
+| Timers | `scheduleTimer`, `claimDueTimers`, `releaseTimerLease` |
 | Signals | `deliverSignal` |
 | Approvals | `deliverApproval` |
 | Schedules | `upsertSchedule`, `claimDueScheduleBuckets`, `markScheduleBucketStarted` |
@@ -25,6 +25,20 @@ The runtime store contract includes:
 
 Adapter authors should run the shared contract tests from
 `@tanstack/workflow-runtime`.
+
+### Timer claims
+
+`claimDueTimers` returns at most `limit` timers in ascending
+`wakeAt`, `runId`, `signalId` order. Its optional `after` cursor is exclusive,
+and must use the same ordering as the returned rows. This lets a sweep move
+past a timer whose workflow version is unavailable without consuming it.
+Timers created behind the cursor are picked up by the next sweep.
+
+`releaseTimerLease` clears a claim only when both `leaseOwner` and
+`leaseExpiresAt` match. A missing timer or a changed lease is a no-op. Sweeps
+release their batch in cleanup, including on a deadline or error, so unused
+claims do not block other workers. Custom stores must implement both additions;
+the bundled stores include them without a schema migration.
 
 ## Drizzle/Postgres
 

@@ -210,7 +210,7 @@ Options:
 | `limit` | Backward-compatible shared limit for recoveries, schedules, and timers. |
 | `maxRecoveredRuns` | Maximum expired running executions to recover. |
 | `maxScheduledRuns` | Maximum due schedule buckets to start. |
-| `maxTimers` | Maximum due timers to resume. |
+| `maxTimers` | Maximum due timers to process, excluding unavailable workflow versions. Rejected timers remain in the results, so the result array can exceed this limit. |
 | `deadline` | Absolute wall-clock deadline in UTC milliseconds. |
 | `maxDurationMs` | Wall-clock budget for this sweep. |
 | `minYieldRemainingMs` | Stops claims and fresh durable work inside this margin. |

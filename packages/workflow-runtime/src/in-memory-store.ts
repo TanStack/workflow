@@ -29,6 +29,7 @@ import type {
   MarkScheduleBucketStartedArgs,
   ReadEventsArgs,
   ReleaseRunLeaseArgs,
+  ReleaseTimerLeaseArgs,
   RunClaim,
   RunId,
   RunSummary,
@@ -301,7 +302,23 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
 
     async claimDueTimers(args: ClaimDueTimersArgs) {
       const due: Array<TimerWakeup> = []
-      for (const [key, timer] of timers.entries()) {
+      const ordered = [...timers.entries()].sort(
+        ([, a], [, b]) =>
+          a.wakeAt - b.wakeAt ||
+          (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0) ||
+          (a.signalId < b.signalId ? -1 : a.signalId > b.signalId ? 1 : 0),
+      )
+      for (const [key, timer] of ordered) {
+        const after = args.after
+        if (
+          after &&
+          (timer.wakeAt < after.wakeAt ||
+            (timer.wakeAt === after.wakeAt &&
+              (timer.runId < after.runId ||
+                (timer.runId === after.runId &&
+                  timer.signalId <= after.signalId))))
+        )
+          continue
         if (due.length >= args.limit) break
         if (timer.wakeAt > args.now) continue
         if (!canClaim(timer.lease, args.leaseOwner, args.now)) continue
@@ -313,6 +330,17 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
         due.push(cloneTimerWakeup(timer))
       }
       return due
+    },
+
+    async releaseTimerLease(args: ReleaseTimerLeaseArgs) {
+      const key = timerKey(args.runId, args.signalId)
+      const timer = timers.get(key)
+      if (
+        timer?.lease?.owner === args.leaseOwner &&
+        timer.lease.expiresAt === args.leaseExpiresAt
+      ) {
+        timers.set(key, { ...timer, lease: undefined })
+      }
     },
 
     async deliverSignal<TPayload>(

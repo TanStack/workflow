@@ -1001,13 +1001,13 @@ describe('workflow runtime driver', () => {
     })
     await old.startRun({
       workflowId: 'missing',
-      runId: 'missing',
+      runId: 'a-missing',
       input: {},
       now: 0,
     })
     await old.startRun({
       workflowId: 'available',
-      runId: 'available',
+      runId: 'z-available',
       input: {},
       now: 0,
     })
@@ -1018,13 +1018,70 @@ describe('workflow runtime driver', () => {
         available: { load: async () => define('available', 'v1') },
       },
     })
-    const result = await current.sweep({ now: 100, maxTimers: 10 })
+    const result = await current.sweep({ now: 100, maxTimers: 1 })
     expect(result.timers.map((timer) => timer.kind)).toEqual([
       'version-mismatch',
       'completed',
     ])
     expect(result.remainingMayExist).toBe(true)
   })
+
+  it.each(['deadline', 'error'])(
+    'releases a timer batch after %s',
+    async (stop) => {
+      const store = inMemoryWorkflowExecutionStore()
+      const workflow = createWorkflow({ id: 'release-timers' }).handler(
+        async (ctx) => {
+          await ctx.sleepUntil(100)
+          return true
+        },
+      )
+      const runtime = defineWorkflowRuntime({
+        store,
+        workflows: { 'release-timers': { load: async () => workflow } },
+      })
+      for (const runId of ['a', 'b'])
+        await runtime.startRun({
+          workflowId: 'release-timers',
+          runId,
+          input: {},
+          now: 0,
+        })
+      let wallNow = 0
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => wallNow)
+      const claim = store.claimDueTimers.bind(store)
+      vi.spyOn(store, 'claimDueTimers').mockImplementation(async (args) => {
+        const timers = await claim(args)
+        if (stop === 'deadline') wallNow = 1000
+        return timers
+      })
+      if (stop === 'error')
+        vi.spyOn(store, 'loadRun').mockRejectedValue(
+          new Error('storage unavailable'),
+        )
+      try {
+        const sweep = runtime.sweep({
+          now: 100,
+          maxTimers: 2,
+          deadline: 500,
+          minYieldRemainingMs: 0,
+        })
+        if (stop === 'error')
+          await expect(sweep).rejects.toThrow('storage unavailable')
+        else expect((await sweep).deadlineReached).toBe(true)
+        expect(
+          await claim({
+            now: 100,
+            limit: 2,
+            leaseOwner: 'next-worker',
+            leaseMs: 50,
+          }),
+        ).toHaveLength(2)
+      } finally {
+        clock.mockRestore()
+      }
+    },
+  )
 
   it('sweeps due schedule buckets into deterministic runs', async () => {
     const store = inMemoryWorkflowExecutionStore()

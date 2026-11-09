@@ -31,6 +31,7 @@ import type {
   MarkScheduleBucketStartedArgs,
   ReadEventsArgs,
   ReleaseRunLeaseArgs,
+  ReleaseTimerLeaseArgs,
   RunClaim,
   RunId,
   RunSummary,
@@ -472,6 +473,9 @@ export function createDrizzlePostgresWorkflowStore(
     },
 
     async claimDueTimers(args: ClaimDueTimersArgs) {
+      const after = args.after
+        ? sql`and (wake_at, run_id, signal_id) > (${args.after.wakeAt}, ${args.after.runId}, ${args.after.signalId})`
+        : sql``
       const rows = await queryRows<TimerRow>(
         db,
         sql`
@@ -479,6 +483,7 @@ export function createDrizzlePostgresWorkflowStore(
             select run_id, signal_id
             from ${tableSql.timers}
             where wake_at <= ${args.now}
+              ${after}
               and (
                 lease_owner is null
                 or lease_owner = ${args.leaseOwner}
@@ -487,7 +492,7 @@ export function createDrizzlePostgresWorkflowStore(
             order by wake_at asc, run_id asc, signal_id asc
             limit ${args.limit}
             for update skip locked
-          )
+          ), claimed as (
           update ${tableSql.timers} timer
           set
             lease_owner = ${args.leaseOwner},
@@ -496,9 +501,21 @@ export function createDrizzlePostgresWorkflowStore(
           where timer.run_id = due.run_id
             and timer.signal_id = due.signal_id
           returning timer.*
+          )
+          select * from claimed order by wake_at asc, run_id asc, signal_id asc
         `,
       )
       return rows.map(timerFromRow)
+    },
+
+    async releaseTimerLease(args: ReleaseTimerLeaseArgs) {
+      await db.execute(sql`
+        update ${tableSql.timers}
+        set lease_owner = null, lease_expires_at = null
+        where run_id = ${args.runId} and signal_id = ${args.signalId}
+          and lease_owner = ${args.leaseOwner}
+          and lease_expires_at = ${args.leaseExpiresAt}
+      `)
     },
 
     async deliverSignal<TPayload>(

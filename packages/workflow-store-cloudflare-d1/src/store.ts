@@ -29,6 +29,7 @@ import type {
   MarkScheduleBucketStartedArgs,
   ReadEventsArgs,
   ReleaseRunLeaseArgs,
+  ReleaseTimerLeaseArgs,
   RunClaim,
   RunId,
   RunSummary,
@@ -525,12 +526,16 @@ export function createCloudflareD1WorkflowStore(
     },
 
     async claimDueTimers(args: ClaimDueTimersArgs) {
+      const after = args.after
+        ? 'and (wake_at, run_id, signal_id) > (?, ?, ?)'
+        : ''
       const due = await query<{ run_id: string; signal_id: string }>(
         db,
         `
           select run_id, signal_id
           from ${tables.timers}
           where wake_at <= ?
+            ${after}
             and (
               lease_owner is null
               or lease_owner = ?
@@ -539,7 +544,15 @@ export function createCloudflareD1WorkflowStore(
           order by wake_at asc, run_id asc, signal_id asc
           limit ?
         `,
-        [args.now, args.leaseOwner, args.now, args.limit],
+        [
+          args.now,
+          ...(args.after
+            ? [args.after.wakeAt, args.after.runId, args.after.signalId]
+            : []),
+          args.leaseOwner,
+          args.now,
+          args.limit,
+        ],
       )
       const timers: Array<TimerWakeup> = []
 
@@ -573,6 +586,19 @@ export function createCloudflareD1WorkflowStore(
       }
 
       return timers
+    },
+
+    async releaseTimerLease(args: ReleaseTimerLeaseArgs) {
+      await query(
+        db,
+        `
+        update ${tables.timers}
+        set lease_owner = null, lease_expires_at = null
+        where run_id = ? and signal_id = ? and lease_owner = ? and lease_expires_at = ?
+        returning run_id
+      `,
+        [args.runId, args.signalId, args.leaseOwner, args.leaseExpiresAt],
+      )
     },
 
     async deliverSignal<TPayload>(
