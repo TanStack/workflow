@@ -92,6 +92,7 @@ export const workflowTimers = pgTable(
   (table) => [
     primaryKey({ columns: [table.runId, table.signalId] }),
     index('workflow_timers_due_idx').on(table.wakeAt, table.leaseExpiresAt),
+    index('workflow_timers_claim_order_idx').on(table.claimOrder),
   ],
 )
 
