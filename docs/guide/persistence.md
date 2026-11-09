@@ -170,7 +170,7 @@ const store = createDrizzlePostgresWorkflowStore({
 Apply the package-owned migration during setup/deploy:
 
 ```bash
-psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql
 ```
 
 Workflow owns the `workflow_*` table definitions, indexes, leases, timers,

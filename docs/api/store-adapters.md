@@ -62,7 +62,7 @@ const store = createDrizzlePostgresWorkflowStore({ db })
 Apply the package-owned migration during setup/deploy:
 
 ```bash
-psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql
 ```
 
 Use it in the runtime:
@@ -101,7 +101,7 @@ the SQL artifact from the installed package instead of mirroring `workflow_*`
 tables in application Drizzle schema files.
 
 ```bash
-psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql
 ```
 
 Programmatic setup can use the exported migration helpers:
@@ -147,6 +147,7 @@ Apply the package-owned D1 migration during setup/deploy:
 
 ```txt
 node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0000_workflow_store.sql
+node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0001_fair_timer_claims.sql
 ```
 
 Programmatic setup can use the exported migration helpers:

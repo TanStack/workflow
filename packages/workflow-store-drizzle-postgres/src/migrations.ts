@@ -41,5 +41,7 @@ export function getDrizzlePostgresWorkflowStoreMigrations(
 export function getDrizzlePostgresWorkflowStoreMigrationSql(
   options?: DrizzlePostgresWorkflowStoreSchemaOptions,
 ): string {
-  return getDrizzlePostgresWorkflowStoreMigrations(options)[0]!.sql
+  return getDrizzlePostgresWorkflowStoreMigrations(options)
+    .map((migration) => migration.sql)
+    .join('\n')
 }

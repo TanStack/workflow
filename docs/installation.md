@@ -49,7 +49,7 @@ const store = createDrizzlePostgresWorkflowStore({ db })
 Apply the package-owned store migration during setup/deploy:
 
 ```bash
-psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql
 ```
 
 For Cloudflare D1:
@@ -66,6 +66,7 @@ const store = createCloudflareD1WorkflowStore({ db: env.WORKFLOW_DB })
 
 Copy or reference the package-owned SQL artifact from
 `node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0000_workflow_store.sql`
+`node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0001_fair_timer_claims.sql`
 in your D1 migration flow.
 
 ## Server framework

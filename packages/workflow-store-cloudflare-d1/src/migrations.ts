@@ -40,5 +40,7 @@ export function getCloudflareD1WorkflowStoreMigrations(
 export function getCloudflareD1WorkflowStoreMigrationSql(
   options?: CloudflareD1WorkflowStoreSchemaOptions,
 ): string {
-  return getCloudflareD1WorkflowStoreMigrations(options)[0]!.sql
+  return getCloudflareD1WorkflowStoreMigrations(options)
+    .map((migration) => migration.sql)
+    .join('\n')
 }

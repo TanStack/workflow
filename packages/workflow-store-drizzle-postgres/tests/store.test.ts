@@ -28,7 +28,11 @@ describe('drizzle-postgres schema contract', () => {
     )
     const migrationSql = await readFile(migrationFile, 'utf8')
 
-    expect(getDrizzlePostgresWorkflowStoreMigrationSql()).toBe(migrationSql)
+    expect(getDrizzlePostgresWorkflowStoreMigrationSql()).toBe(
+      getDrizzlePostgresWorkflowStoreMigrations()
+        .map((migration) => migration.sql)
+        .join('\n'),
+    )
     expect(getDrizzlePostgresWorkflowStoreMigrations()[1]!.sql).toBe(
       await readFile(
         new URL('../migrations/0001_fair_timer_claims.sql', import.meta.url),
@@ -74,7 +78,7 @@ describe('drizzle-postgres schema contract', () => {
   test('upgrades existing timers and preserves fairness across store instances', async () => {
     const client = new PGlite()
     const db = drizzle(client)
-    await client.exec(getDrizzlePostgresWorkflowStoreMigrationSql())
+    await client.exec(getDrizzlePostgresWorkflowStoreMigrations()[0]!.sql)
     await client.exec(
       `insert into workflow_timers (run_id, signal_id, workflow_id, wake_at, lease_owner, lease_expires_at) values ('a', 'timer', 'workflow', 100, 'old-worker', 50), ('b', 'timer', 'workflow', 100, null, null)`,
     )

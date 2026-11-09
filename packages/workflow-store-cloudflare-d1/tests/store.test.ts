@@ -31,7 +31,11 @@ describe('cloudflare-d1 schema contract', () => {
     )
     const migrationSql = await readFile(migrationFile, 'utf8')
 
-    expect(getCloudflareD1WorkflowStoreMigrationSql()).toBe(migrationSql)
+    expect(getCloudflareD1WorkflowStoreMigrationSql()).toBe(
+      getCloudflareD1WorkflowStoreMigrations()
+        .map((migration) => migration.sql)
+        .join('\n'),
+    )
     expect(getCloudflareD1WorkflowStoreMigrations()[1]!.sql).toBe(
       await readFile(
         new URL('../migrations/0001_fair_timer_claims.sql', import.meta.url),
@@ -72,7 +76,7 @@ describe('cloudflare-d1 schema contract', () => {
 
   test('upgrades existing timers and preserves fairness across store instances', async () => {
     const db = createTestD1Database()
-    await db.exec!(getCloudflareD1WorkflowStoreMigrationSql())
+    await db.exec!(getCloudflareD1WorkflowStoreMigrations()[0]!.sql)
     await db.exec!(
       `insert into workflow_timers (run_id, signal_id, workflow_id, wake_at, lease_owner, lease_expires_at) values ('a', 'timer', 'workflow', 100, 'old-worker', 50), ('b', 'timer', 'workflow', 100, null, null)`,
     )

@@ -36,6 +36,7 @@ The SQL artifact lives at:
 
 ```txt
 node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0000_workflow_store.sql
+node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0001_fair_timer_claims.sql
 ```
 
 `store.ensureSchema()` remains available for tests, local demos, and explicit

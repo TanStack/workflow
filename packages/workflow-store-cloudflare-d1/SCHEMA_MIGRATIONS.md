@@ -33,6 +33,6 @@ timers and leases. Fresh databases apply `0000_workflow_store.sql` then `0001`.
 `ensureSchema()` checks the migration ledger and applies missing migrations;
 run it once during deployment, before starting workers.
 
-The singular `getCloudflareD1WorkflowStoreMigrationSql` helper remains the original
-bootstrap SQL. Use the package's `getCloudflareD1WorkflowStoreMigrations()` helper for
-the complete ordered migration list, including custom table names.
+`getCloudflareD1WorkflowStoreMigrationSql()` returns the complete SQL for a fresh
+installation. For upgrades, use `getCloudflareD1WorkflowStoreMigrations()` and apply
+only entries absent from the migration ledger. Both helpers support custom table names.

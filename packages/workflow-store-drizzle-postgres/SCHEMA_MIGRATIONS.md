@@ -92,6 +92,6 @@ timers and leases. Fresh databases apply `0000_workflow_store.sql` then `0001`.
 `ensureSchema()` checks the migration ledger and applies missing migrations;
 run it once during deployment, before starting workers.
 
-The singular `getDrizzlePostgresWorkflowStoreMigrationSql` helper remains the original
-bootstrap SQL. Use the package's `getDrizzlePostgresWorkflowStoreMigrations()` helper for
-the complete ordered migration list, including custom table names.
+`getDrizzlePostgresWorkflowStoreMigrationSql()` returns the complete SQL for a fresh
+installation. For upgrades, use `getDrizzlePostgresWorkflowStoreMigrations()` and apply
+only entries absent from the migration ledger. Both helpers support custom table names.

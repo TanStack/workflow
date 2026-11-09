@@ -39,6 +39,7 @@ copy of the package-owned artifact from:
 
 ```txt
 packages/workflow-store-cloudflare-d1/migrations/0000_workflow_store.sql
+packages/workflow-store-cloudflare-d1/migrations/0001_fair_timer_claims.sql
 ```
 
 Apply it locally:
