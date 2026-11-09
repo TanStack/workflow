@@ -4,4 +4,4 @@
 '@tanstack/workflow-store-drizzle-postgres': patch
 ---
 
-Prevent unavailable workflow versions from starving other due timers, and release unused timer claims when a sweep stops or fails. Custom execution stores must implement cursor-based timer claims and ownership-checked timer lease release.
+Bound timer inspections and rotate persisted claims so unavailable workflow versions cannot starve other due timers. Release unused claims on deadlines and errors, and claim D1 batches atomically. Existing SQL stores must apply migration 0001_fair_timer_claims before upgrading the runtime, or run ensureSchema during deployment. Custom stores must implement fair claims and ownership-checked timer lease release.

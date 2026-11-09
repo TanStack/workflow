@@ -206,3 +206,14 @@ function normalizeSqlStatement(statement: string) {
     )
     .join('\n')
 }
+
+export function getDrizzlePostgresTimerFairnessStatements(
+  options: DrizzlePostgresWorkflowStoreSchemaOptions = {},
+): Array<string> {
+  const tables = resolveDrizzlePostgresWorkflowStoreTables(options.tables)
+  return [
+    `alter table ${qualifiedTableName(options.schema, tables.timers)} add column claim_order bigint not null default 0`,
+    `insert into ${qualifiedTableName(options.schema, tables.schemaMigrations)} (migration_id, package_name, package_version, applied_at)
+     values ('0001_fair_timer_claims', '@tanstack/workflow-store-drizzle-postgres', null, cast(extract(epoch from now()) * 1000 as bigint))`,
+  ].map(normalizeSqlStatement)
+}

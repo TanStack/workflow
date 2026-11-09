@@ -236,7 +236,7 @@ export function runWorkflowExecutionStoreContractTests(
       expect(reclaimed).toHaveLength(1)
     })
 
-    it('pages past rejected timers and releases only the matching lease', async () => {
+    it('rotates timer claims and releases only the matching lease', async () => {
       const store = await options.createStore()
       for (const runId of ['c', 'b', 'a']) {
         await store.createRun({
@@ -256,7 +256,7 @@ export function runWorkflowExecutionStoreContractTests(
       const claim = { now: 100, limit: 1, leaseOwner: 'worker-a', leaseMs: 50 }
       const first = await store.claimDueTimers(claim)
       expect(first.map((t) => t.runId)).toEqual(['a'])
-      const second = await store.claimDueTimers({ ...claim, after: first[0] })
+      const second = await store.claimDueTimers(claim)
       expect(second.map((t) => t.runId)).toEqual(['b'])
       await store.releaseTimerLease({
         runId: 'a',
@@ -281,7 +281,12 @@ export function runWorkflowExecutionStoreContractTests(
         ),
       ).toEqual(['a'])
       // An expired claim must not clear a newer lease, even for the same owner.
-      await store.claimDueTimers({ ...claim, now: 151, leaseOwner: 'worker-b' })
+      await store.claimDueTimers({
+        ...claim,
+        now: 151,
+        limit: 3,
+        leaseOwner: 'worker-b',
+      })
       await store.releaseTimerLease({
         runId: 'a',
         signalId: 'timer',

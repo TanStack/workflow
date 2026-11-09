@@ -83,3 +83,15 @@ pnpm test:sherif
 ```
 
 Confirm the dry-run tarball includes every SQL file under `migrations/`.
+
+## Upgrading existing stores
+
+Apply `migrations/0001_fair_timer_claims.sql` once before deploying the timer
+fairness runtime. It adds `claim_order` with a zero default, preserving existing
+timers and leases. Fresh databases apply `0000_workflow_store.sql` then `0001`.
+`ensureSchema()` checks the migration ledger and applies missing migrations;
+run it once during deployment, before starting workers.
+
+The singular `getDrizzlePostgresWorkflowStoreMigrationSql` helper remains the original
+bootstrap SQL. Use the package's `getDrizzlePostgresWorkflowStoreMigrations()` helper for
+the complete ordered migration list, including custom table names.

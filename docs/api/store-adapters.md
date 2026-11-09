@@ -28,17 +28,17 @@ Adapter authors should run the shared contract tests from
 
 ### Timer claims
 
-`claimDueTimers` returns at most `limit` timers in ascending
-`wakeAt`, `runId`, `signalId` order. Its optional `after` cursor is exclusive,
-and must use the same ordering as the returned rows. This lets a sweep move
-past a timer whose workflow version is unavailable without consuming it.
-Timers created behind the cursor are picked up by the next sweep.
+`claimDueTimers` returns at most `limit` due timers. Stores persist a claim
+order and prefer the least recently claimed timers. This keeps each sweep
+bounded while giving other timers a turn on subsequent sweeps, even when a
+workflow version stays unavailable. Newly scheduled timers start unclaimed.
 
 `releaseTimerLease` clears a claim only when both `leaseOwner` and
 `leaseExpiresAt` match. A missing timer or a changed lease is a no-op. Sweeps
 release their batch in cleanup, including on a deadline or error, so unused
-claims do not block other workers. Custom stores must implement both additions;
-the bundled stores include them without a schema migration.
+claims do not block other workers. Custom stores must implement fair claims
+and lease release. Existing SQL stores must apply `0001_fair_timer_claims.sql`
+before deploying this runtime. `ensureSchema()` also applies this migration.
 
 ## Drizzle/Postgres
 

@@ -1021,9 +1021,76 @@ describe('workflow runtime driver', () => {
     const result = await current.sweep({ now: 100, maxTimers: 1 })
     expect(result.timers.map((timer) => timer.kind)).toEqual([
       'version-mismatch',
-      'completed',
     ])
+    const next = await current.sweep({ now: 100, maxTimers: 1 })
+    expect(next.timers.map((timer) => timer.kind)).toEqual(['completed'])
     expect(result.remainingMayExist).toBe(true)
+  })
+
+  it('bounds inspections while rotating past a backlog of missing versions', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'backlog', version }).handler(async (ctx) => {
+        await ctx.sleepUntil(100)
+        return true
+      })
+    const old = defineWorkflowRuntime({
+      store,
+      workflows: { backlog: { load: async () => define('v1') } },
+    })
+    for (let i = 0; i < 4; i++)
+      await old.startRun({
+        workflowId: 'backlog',
+        runId: `missing-${i}`,
+        input: {},
+        now: 0,
+      })
+    const current = defineWorkflowRuntime({
+      store,
+      workflows: { backlog: { load: async () => define('v2') } },
+    })
+    await current.startRun({
+      workflowId: 'backlog',
+      runId: 'z-healthy',
+      input: {},
+      now: 0,
+    })
+    const claim = vi.spyOn(store, 'claimDueTimers')
+    for (let i = 0; i < 5; i++) {
+      claim.mockClear()
+      const sweep = await current.sweep({ now: 100, maxTimers: 1 })
+      expect(claim).toHaveBeenCalledTimes(1)
+      expect(sweep.timers).toHaveLength(1)
+      expect(sweep.timers[0]?.kind).toBe(
+        i < 4 ? 'version-mismatch' : 'completed',
+      )
+    }
+  })
+
+  it('resumes newly created timers even when their IDs sort earlier', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const workflow = createWorkflow({ id: 'reverse-timers' }).handler(
+      async (ctx) => {
+        await ctx.sleepUntil(100, { id: 'z' })
+        await ctx.sleepUntil(100, { id: 'a' })
+        return true
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: { 'reverse-timers': { load: async () => workflow } },
+    })
+    await runtime.startRun({
+      workflowId: 'reverse-timers',
+      runId: 'reverse',
+      input: {},
+      now: 0,
+    })
+    expect(
+      (await runtime.sweep({ now: 100, maxTimers: 3 })).timers.map(
+        (t) => t.kind,
+      ),
+    ).toEqual(['paused', 'completed'])
   })
 
   it.each(['deadline', 'error'])(

@@ -442,8 +442,8 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
       const recovered: Array<WorkflowRuntimeRunResult> = []
       const scheduled: Array<WorkflowRuntimeRunResult> = []
       const timers: Array<WorkflowRuntimeRunResult> = []
-      let timerCursor: TimerWakeup | undefined
-      let processedTimers = 0
+      let inspectedTimers = 0
+      const seenTimers = new Set<string>()
       let rejectedTimer = false
       let deadlineReached = false
 
@@ -575,7 +575,7 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
         scheduled.push(result)
       }
 
-      while (processedTimers < maxTimers) {
+      while (inspectedTimers < maxTimers) {
         if (shouldStopForDeadline(deadline, minYieldRemainingMs)) {
           deadlineReached = true
           break
@@ -587,21 +587,25 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
           () =>
             config.store.claimDueTimers({
               now,
-              limit: maxTimers - processedTimers,
-              after: timerCursor,
+              limit: maxTimers - inspectedTimers,
               leaseOwner,
               leaseMs,
             }),
         )
         if (dueTimers.length === 0) break
+        let advanced = false
         try {
           for (const timer of dueTimers) {
-            if (processedTimers >= maxTimers) break
+            if (inspectedTimers >= maxTimers) break
             if (shouldStopForDeadline(deadline, minYieldRemainingMs)) {
               deadlineReached = true
               break
             }
-            timerCursor = timer
+            inspectedTimers++
+            const timerKey = JSON.stringify([timer.runId, timer.signalId])
+            if (seenTimers.has(timerKey)) continue
+            seenTimers.add(timerKey)
+            advanced = true
             const result = await deliverTimer(config, telemetry, {
               timer,
               now,
@@ -615,7 +619,6 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
               publish: args.publish,
             })
             if (result.kind === 'version-mismatch') rejectedTimer = true
-            else processedTimers++
             timers.push(result)
           }
         } finally {
@@ -630,7 +633,7 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
             ),
           )
         }
-        if (deadlineReached) break
+        if (deadlineReached || !advanced) break
       }
 
       const result = {
@@ -644,7 +647,7 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
           deadlineReached ||
           recovered.length >= maxRecoveredRuns ||
           scheduled.length >= maxScheduledRuns ||
-          timers.length >= maxTimers,
+          inspectedTimers >= maxTimers,
       }
       span.setAttribute(
         'tanstack.workflow.event_count',

@@ -1,6 +1,7 @@
 import { LogConflictError } from '@tanstack/workflow-core'
 import { sql } from 'drizzle-orm'
 import {
+  getDrizzlePostgresTimerFairnessStatements,
   getDrizzlePostgresWorkflowStoreSchemaStatements,
   qualifiedTableName,
   resolveDrizzlePostgresWorkflowStoreTables,
@@ -83,6 +84,18 @@ export function createDrizzlePostgresWorkflowStore(
       })) {
         await db.execute(sql.raw(statement))
       }
+      const applied = await queryRows(
+        db,
+        sql`select migration_id from ${tableSql.schemaMigrations} where migration_id = '0001_fair_timer_claims'`,
+      )
+      if (!applied.length)
+        await withTransaction(db, async (tx) => {
+          for (const statement of getDrizzlePostgresTimerFairnessStatements({
+            schema: options.schema,
+            tables: tableNames,
+          }))
+            await tx.execute(sql.raw(statement))
+        })
     },
 
     async createRun(args: CreateRunArgs): Promise<CreateRunResult> {
@@ -473,9 +486,6 @@ export function createDrizzlePostgresWorkflowStore(
     },
 
     async claimDueTimers(args: ClaimDueTimersArgs) {
-      const after = args.after
-        ? sql`and (wake_at, run_id, signal_id) > (${args.after.wakeAt}, ${args.after.runId}, ${args.after.signalId})`
-        : sql``
       const rows = await queryRows<TimerRow>(
         db,
         sql`
@@ -483,18 +493,18 @@ export function createDrizzlePostgresWorkflowStore(
             select run_id, signal_id
             from ${tableSql.timers}
             where wake_at <= ${args.now}
-              ${after}
               and (
                 lease_owner is null
                 or lease_owner = ${args.leaseOwner}
                 or lease_expires_at <= ${args.now}
               )
-            order by wake_at asc, run_id asc, signal_id asc
+            order by claim_order asc, wake_at asc, run_id asc, signal_id asc
             limit ${args.limit}
             for update skip locked
           ), claimed as (
           update ${tableSql.timers} timer
           set
+            claim_order = (select coalesce(max(claim_order), 0) + 1 from ${tableSql.timers}),
             lease_owner = ${args.leaseOwner},
             lease_expires_at = ${args.now + args.leaseMs}
           from due
@@ -502,7 +512,7 @@ export function createDrizzlePostgresWorkflowStore(
             and timer.signal_id = due.signal_id
           returning timer.*
           )
-          select * from claimed order by wake_at asc, run_id asc, signal_id asc
+          select * from claimed order by claim_order asc, wake_at asc, run_id asc, signal_id asc
         `,
       )
       return rows.map(timerFromRow)
@@ -817,6 +827,7 @@ export function createDrizzlePostgresWorkflowStore(
 }
 
 interface TableSqls {
+  schemaMigrations: SQL
   runs: SQL
   runStates: SQL
   eventLocks: SQL
@@ -902,6 +913,9 @@ function tableSqls(
   tables: DrizzlePostgresWorkflowStoreTables,
 ): TableSqls {
   return {
+    schemaMigrations: sql.raw(
+      qualifiedTableName(schema, tables.schemaMigrations),
+    ),
     runs: sql.raw(qualifiedTableName(schema, tables.runs)),
     runStates: sql.raw(qualifiedTableName(schema, tables.runStates)),
     eventLocks: sql.raw(qualifiedTableName(schema, tables.eventLocks)),

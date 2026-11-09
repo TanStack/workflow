@@ -1,5 +1,6 @@
 import { LogConflictError } from '@tanstack/workflow-core'
 import {
+  getCloudflareD1TimerFairnessStatements,
   getCloudflareD1WorkflowStoreSchemaStatements,
   quoteIdent,
   resolveCloudflareD1WorkflowStoreTables,
@@ -103,6 +104,18 @@ export function createCloudflareD1WorkflowStore(
       })) {
         await execute(db, statement)
       }
+      const applied = await query(
+        db,
+        `select migration_id from ${tables.schemaMigrations} where migration_id = ?`,
+        ['0001_fair_timer_claims'],
+      )
+      if (!applied.length)
+        await executeMany(
+          db,
+          getCloudflareD1TimerFairnessStatements({ tables: tableNames }).map(
+            (sql) => statement(sql),
+          ),
+        )
     },
 
     async createRun(args: CreateRunArgs): Promise<CreateRunResult> {
@@ -526,66 +539,31 @@ export function createCloudflareD1WorkflowStore(
     },
 
     async claimDueTimers(args: ClaimDueTimersArgs) {
-      const after = args.after
-        ? 'and (wake_at, run_id, signal_id) > (?, ?, ?)'
-        : ''
-      const due = await query<{ run_id: string; signal_id: string }>(
+      // One statement makes selection and every lease update atomic in D1.
+      const rows = await query<TimerRow>(
         db,
         `
-          select run_id, signal_id
-          from ${tables.timers}
-          where wake_at <= ?
-            ${after}
-            and (
-              lease_owner is null
-              or lease_owner = ?
-              or lease_expires_at <= ?
-            )
-          order by wake_at asc, run_id asc, signal_id asc
+        update ${tables.timers}
+        set lease_owner = ?, lease_expires_at = ?,
+          claim_order = (select coalesce(max(claim_order), 0) + 1 from ${tables.timers})
+        where (run_id, signal_id) in (
+          select run_id, signal_id from ${tables.timers}
+          where wake_at <= ? and (lease_owner is null or lease_owner = ? or lease_expires_at <= ?)
+          order by claim_order asc, wake_at asc, run_id asc, signal_id asc
           limit ?
-        `,
+        )
+        returning *
+      `,
         [
+          args.leaseOwner,
+          args.now + args.leaseMs,
           args.now,
-          ...(args.after
-            ? [args.after.wakeAt, args.after.runId, args.after.signalId]
-            : []),
           args.leaseOwner,
           args.now,
           args.limit,
         ],
       )
-      const timers: Array<TimerWakeup> = []
-
-      for (const timer of due) {
-        const rows = await query<TimerRow>(
-          db,
-          `
-            update ${tables.timers}
-            set
-              lease_owner = ?,
-              lease_expires_at = ?
-            where run_id = ?
-              and signal_id = ?
-              and (
-                lease_owner is null
-                or lease_owner = ?
-                or lease_expires_at <= ?
-              )
-            returning *
-          `,
-          [
-            args.leaseOwner,
-            args.now + args.leaseMs,
-            timer.run_id,
-            timer.signal_id,
-            args.leaseOwner,
-            args.now,
-          ],
-        )
-        if (rows[0]) timers.push(timerFromRow(rows[0]))
-      }
-
-      return timers
+      return rows.map(timerFromRow)
     },
 
     async releaseTimerLease(args: ReleaseTimerLeaseArgs) {
@@ -943,6 +921,7 @@ export function createCloudflareD1WorkflowStore(
 }
 
 interface TableSqls {
+  schemaMigrations: string
   runs: string
   runStates: string
   eventLocks: string
@@ -1030,6 +1009,7 @@ interface Statement {
 
 function tableSqls(tables: CloudflareD1WorkflowStoreTables): TableSqls {
   return {
+    schemaMigrations: quoteIdent(tables.schemaMigrations),
     runs: quoteIdent(tables.runs),
     runStates: quoteIdent(tables.runStates),
     eventLocks: quoteIdent(tables.eventLocks),

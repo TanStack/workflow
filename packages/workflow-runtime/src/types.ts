@@ -143,8 +143,6 @@ export interface ScheduleTimerArgs {
   now: number
 }
 
-export type TimerCursor = Pick<TimerWakeup, 'wakeAt' | 'runId' | 'signalId'>
-
 export interface ReleaseTimerLeaseArgs {
   runId: RunId
   signalId: string
@@ -153,8 +151,6 @@ export interface ReleaseTimerLeaseArgs {
 }
 
 export interface ClaimDueTimersArgs {
-  /** Only claim timers strictly after this cursor, in wakeAt/runId/signalId order. */
-  after?: TimerCursor
   now: number
   limit: number
   leaseOwner: LeaseOwner

@@ -32,6 +32,12 @@ describe('cloudflare-d1 schema contract', () => {
     const migrationSql = await readFile(migrationFile, 'utf8')
 
     expect(getCloudflareD1WorkflowStoreMigrationSql()).toBe(migrationSql)
+    expect(getCloudflareD1WorkflowStoreMigrations()[1]!.sql).toBe(
+      await readFile(
+        new URL('../migrations/0001_fair_timer_claims.sql', import.meta.url),
+        'utf8',
+      ),
+    )
     expect(getCloudflareD1WorkflowStoreMigrations()).toEqual([
       {
         id: '0000_workflow_store',
@@ -39,6 +45,13 @@ describe('cloudflare-d1 schema contract', () => {
         order: 0,
         statements: expect.any(Array),
         sql: migrationSql,
+      },
+      {
+        id: '0001_fair_timer_claims',
+        name: 'Fair timer claims',
+        order: 1,
+        statements: expect.any(Array),
+        sql: expect.any(String),
       },
     ])
   })
@@ -57,10 +70,70 @@ describe('cloudflare-d1 schema contract', () => {
     expect(sql).toContain('create table if not exists "workflow_events"')
   })
 
+  test('upgrades existing timers and preserves fairness across store instances', async () => {
+    const db = createTestD1Database()
+    await db.exec!(getCloudflareD1WorkflowStoreMigrationSql())
+    await db.exec!(
+      `insert into workflow_timers (run_id, signal_id, workflow_id, wake_at, lease_owner, lease_expires_at) values ('a', 'timer', 'workflow', 100, 'old-worker', 50), ('b', 'timer', 'workflow', 100, null, null)`,
+    )
+    const store = createCloudflareD1WorkflowStore({ db })
+    await store.ensureSchema()
+    await store.ensureSchema()
+    const args = { now: 100, limit: 1, leaseOwner: 'worker', leaseMs: 50 }
+    expect((await store.claimDueTimers(args)).map((t) => t.runId)).toEqual([
+      'a',
+    ])
+    await store.releaseTimerLease({
+      runId: 'a',
+      signalId: 'timer',
+      leaseOwner: 'worker',
+      leaseExpiresAt: 150,
+    })
+    const restarted = createCloudflareD1WorkflowStore({ db })
+    expect((await restarted.claimDueTimers(args)).map((t) => t.runId)).toEqual([
+      'b',
+    ])
+  })
+
+  test('rolls back every timer claim if a batch update fails', async () => {
+    const db = createTestD1Database()
+    const store = createCloudflareD1WorkflowStore({ db })
+    await store.ensureSchema()
+    for (const runId of ['a', 'b'])
+      await store.scheduleTimer({
+        runId,
+        workflowId: 'workflow',
+        signalId: 'timer',
+        wakeAt: 100,
+        now: 0,
+      })
+    await db.exec!(
+      "create trigger fail_second_claim before update on workflow_timers when new.run_id = 'b' begin select raise(abort, 'claim failed'); end",
+    )
+    await expect(
+      store.claimDueTimers({
+        now: 100,
+        limit: 2,
+        leaseOwner: 'failed-worker',
+        leaseMs: 50,
+      }),
+    ).rejects.toThrow('claim failed')
+    await db.exec!('drop trigger fail_second_claim')
+    expect(
+      await store.claimDueTimers({
+        now: 100,
+        limit: 2,
+        leaseOwner: 'next-worker',
+        leaseMs: 50,
+      }),
+    ).toHaveLength(2)
+  })
+
   test('records the applied schema migration during ensureSchema', async () => {
     const db = createTestD1Database()
     const store = createCloudflareD1WorkflowStore({ db })
 
+    await store.ensureSchema()
     await store.ensureSchema()
 
     const rows = await db
@@ -70,6 +143,10 @@ describe('cloudflare-d1 schema contract', () => {
       .all<{ migration_id: string; package_name: string }>()
 
     expect(rows.results).toEqual([
+      {
+        migration_id: '0000_workflow_store',
+        package_name: '@tanstack/workflow-store-cloudflare-d1',
+      },
       {
         migration_id: cloudflareD1WorkflowStoreSchemaVersion,
         package_name: '@tanstack/workflow-store-cloudflare-d1',

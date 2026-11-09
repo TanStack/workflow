@@ -49,6 +49,7 @@ import type {
 } from './types'
 
 interface TimerRecord extends TimerWakeup {
+  claimOrder?: number
   lease?: WorkflowLease
 }
 
@@ -75,6 +76,7 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
   const runStates = new Map<RunId, RunState>()
   const logs = new Map<RunId, Array<StoredWorkflowEvent>>()
   const timers = new Map<string, TimerRecord>()
+  let timerClaimOrder = 0
   const signalDeliveries = new Map<string, true>()
   const schedules = new Map<ScheduleId, ScheduleRecord>()
   const scheduleBuckets = new Map<string, ScheduleBucketRecord>()
@@ -304,27 +306,19 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
       const due: Array<TimerWakeup> = []
       const ordered = [...timers.entries()].sort(
         ([, a], [, b]) =>
+          (a.claimOrder ?? 0) - (b.claimOrder ?? 0) ||
           a.wakeAt - b.wakeAt ||
           (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0) ||
           (a.signalId < b.signalId ? -1 : a.signalId > b.signalId ? 1 : 0),
       )
       for (const [key, timer] of ordered) {
-        const after = args.after
-        if (
-          after &&
-          (timer.wakeAt < after.wakeAt ||
-            (timer.wakeAt === after.wakeAt &&
-              (timer.runId < after.runId ||
-                (timer.runId === after.runId &&
-                  timer.signalId <= after.signalId))))
-        )
-          continue
         if (due.length >= args.limit) break
         if (timer.wakeAt > args.now) continue
         if (!canClaim(timer.lease, args.leaseOwner, args.now)) continue
 
         timers.set(key, {
           ...timer,
+          claimOrder: ++timerClaimOrder,
           lease: lease(args.leaseOwner, args.leaseMs, args.now),
         })
         due.push(cloneTimerWakeup(timer))

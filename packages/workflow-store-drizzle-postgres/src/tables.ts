@@ -87,6 +87,7 @@ export const workflowTimers = pgTable(
     wakeAt: bigint('wake_at', { mode: 'number' }).notNull(),
     leaseOwner: text('lease_owner'),
     leaseExpiresAt: bigint('lease_expires_at', { mode: 'number' }),
+    claimOrder: bigint('claim_order', { mode: 'number' }).notNull().default(0),
   },
   (table) => [
     primaryKey({ columns: [table.runId, table.signalId] }),

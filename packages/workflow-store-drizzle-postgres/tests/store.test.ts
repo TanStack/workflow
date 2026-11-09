@@ -29,6 +29,12 @@ describe('drizzle-postgres schema contract', () => {
     const migrationSql = await readFile(migrationFile, 'utf8')
 
     expect(getDrizzlePostgresWorkflowStoreMigrationSql()).toBe(migrationSql)
+    expect(getDrizzlePostgresWorkflowStoreMigrations()[1]!.sql).toBe(
+      await readFile(
+        new URL('../migrations/0001_fair_timer_claims.sql', import.meta.url),
+        'utf8',
+      ),
+    )
     expect(getDrizzlePostgresWorkflowStoreMigrations()).toEqual([
       {
         id: '0000_workflow_store',
@@ -36,6 +42,13 @@ describe('drizzle-postgres schema contract', () => {
         order: 0,
         statements: expect.any(Array),
         sql: migrationSql,
+      },
+      {
+        id: '0001_fair_timer_claims',
+        name: 'Fair timer claims',
+        order: 1,
+        statements: expect.any(Array),
+        sql: expect.any(String),
       },
     ])
   })
@@ -58,6 +71,32 @@ describe('drizzle-postgres schema contract', () => {
     )
   })
 
+  test('upgrades existing timers and preserves fairness across store instances', async () => {
+    const client = new PGlite()
+    const db = drizzle(client)
+    await client.exec(getDrizzlePostgresWorkflowStoreMigrationSql())
+    await client.exec(
+      `insert into workflow_timers (run_id, signal_id, workflow_id, wake_at, lease_owner, lease_expires_at) values ('a', 'timer', 'workflow', 100, 'old-worker', 50), ('b', 'timer', 'workflow', 100, null, null)`,
+    )
+    const store = createDrizzlePostgresWorkflowStore({ db })
+    await store.ensureSchema()
+    await store.ensureSchema()
+    const args = { now: 100, limit: 1, leaseOwner: 'worker', leaseMs: 50 }
+    expect((await store.claimDueTimers(args)).map((t) => t.runId)).toEqual([
+      'a',
+    ])
+    await store.releaseTimerLease({
+      runId: 'a',
+      signalId: 'timer',
+      leaseOwner: 'worker',
+      leaseExpiresAt: 150,
+    })
+    const restarted = createDrizzlePostgresWorkflowStore({ db })
+    expect((await restarted.claimDueTimers(args)).map((t) => t.runId)).toEqual([
+      'b',
+    ])
+  })
+
   test('records the applied schema migration during ensureSchema', async () => {
     const client = new PGlite()
     const db = drizzle(client)
@@ -73,6 +112,10 @@ describe('drizzle-postgres schema contract', () => {
     )
 
     expect(result.rows).toEqual([
+      {
+        migration_id: '0000_workflow_store',
+        package_name: '@tanstack/workflow-store-drizzle-postgres',
+      },
       {
         migration_id: drizzlePostgresWorkflowStoreSchemaVersion,
         package_name: '@tanstack/workflow-store-drizzle-postgres',
