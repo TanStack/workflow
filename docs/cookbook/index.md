@@ -201,9 +201,15 @@ export async function POST(request: Request) {
     includeEvents: false,
   })
 
-  return Response.json({ kind: result.kind })
+  return Response.json(
+    { kind: result.kind },
+    { status: result.kind === 'version-mismatch' ? 503 : 200 },
+  )
 }
 ```
+
+The sender must retry 503 responses with the same event ID. If it cannot retry,
+store the delivery in a durable inbox before acknowledging it.
 
 ## Wait for approval
 
