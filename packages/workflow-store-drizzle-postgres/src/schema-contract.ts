@@ -212,9 +212,9 @@ export function getDrizzlePostgresTimerFairnessStatements(
 ): Array<string> {
   const tables = resolveDrizzlePostgresWorkflowStoreTables(options.tables)
   return [
-    `alter table ${qualifiedTableName(options.schema, tables.timers)} add column claim_order bigint not null default 0`,
-    `create index ${quoteIdent(`${tables.timers}_claim_order_idx`)} on ${qualifiedTableName(options.schema, tables.timers)} (claim_order)`,
+    `alter table ${qualifiedTableName(options.schema, tables.timers)} add column if not exists claim_order bigint not null default 0`,
+    `create index if not exists ${quoteIdent(`${tables.timers}_claim_order_idx`)} on ${qualifiedTableName(options.schema, tables.timers)} (claim_order)`,
     `insert into ${qualifiedTableName(options.schema, tables.schemaMigrations)} (migration_id, package_name, package_version, applied_at)
-     values ('0001_fair_timer_claims', '@tanstack/workflow-store-drizzle-postgres', null, cast(extract(epoch from now()) * 1000 as bigint))`,
+     values ('0001_fair_timer_claims', '@tanstack/workflow-store-drizzle-postgres', null, cast(extract(epoch from now()) * 1000 as bigint)) on conflict (migration_id) do nothing`,
   ].map(normalizeSqlStatement)
 }

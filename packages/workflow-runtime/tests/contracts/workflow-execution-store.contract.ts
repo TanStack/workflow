@@ -265,9 +265,13 @@ export function runWorkflowExecutionStoreContractTests(
         leaseExpiresAt: 150,
       })
       expect(
-        (await store.claimDueTimers({ ...claim, leaseOwner: 'worker-b' })).map(
-          (t) => t.runId,
-        ),
+        (
+          await store.claimDueTimers({
+            ...claim,
+            limit: 3,
+            leaseOwner: 'worker-b',
+          })
+        ).map((t) => t.runId),
       ).toEqual(['c'])
       await store.releaseTimerLease({
         runId: 'a',
@@ -276,9 +280,13 @@ export function runWorkflowExecutionStoreContractTests(
         leaseExpiresAt: 150,
       })
       expect(
-        (await store.claimDueTimers({ ...claim, leaseOwner: 'worker-b' })).map(
-          (t) => t.runId,
-        ),
+        (
+          await store.claimDueTimers({
+            ...claim,
+            limit: 1,
+            leaseOwner: 'worker-b',
+          })
+        ).map((t) => t.runId),
       ).toEqual(['a'])
       // An expired claim must not clear a newer lease, even for the same owner.
       await store.claimDueTimers({

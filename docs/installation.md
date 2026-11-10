@@ -49,7 +49,7 @@ const store = createDrizzlePostgresWorkflowStore({ db })
 Apply the package-owned store migration during setup/deploy:
 
 ```bash
-psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql
+psql -v ON_ERROR_STOP=1 --single-transaction "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql
 ```
 
 For Cloudflare D1:

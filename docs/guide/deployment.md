@@ -67,7 +67,7 @@ the package-owned migration against the same database your deployed functions
 use:
 
 ```bash
-psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql
+psql -v ON_ERROR_STOP=1 --single-transaction "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql
 ```
 
 For Cloudflare D1, use the D1-compatible package-owned migration artifact:
@@ -82,7 +82,7 @@ Wire it into your app scripts if your deploy provider runs package scripts:
 ```json
 {
   "scripts": {
-    "workflow:migrate": "psql \"$DATABASE_URL\" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql",
+    "workflow:migrate": "psql -v ON_ERROR_STOP=1 --single-transaction \"$DATABASE_URL\" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql",
     "workflow:sweep": "tsx scripts/workflow-sweep.ts"
   }
 }

@@ -101,6 +101,45 @@ describe('drizzle-postgres schema contract', () => {
     ])
   })
 
+  test('upgrades separate timer tables sharing a migration ledger', async () => {
+    const client = new PGlite()
+    const db = drizzle(client)
+    const first = createDrizzlePostgresWorkflowStore({ db })
+    await first.ensureSchema()
+    const second = createDrizzlePostgresWorkflowStore({
+      db,
+      tables: { timers: 'other_timers' },
+    })
+    await second.ensureSchema()
+    await second.ensureSchema()
+    await second.scheduleTimer({
+      runId: 'a',
+      workflowId: 'workflow',
+      signalId: 'timer',
+      wakeAt: 100,
+      now: 0,
+    })
+    expect(
+      await second.claimDueTimers({
+        now: 100,
+        limit: 1,
+        leaseOwner: 'worker',
+        leaseMs: 50,
+      }),
+    ).toHaveLength(1)
+  })
+
+  test('retries the exported migration after a partial application', async () => {
+    const client = new PGlite()
+    const migrations = getDrizzlePostgresWorkflowStoreMigrations()
+    await client.exec(migrations[0]!.sql)
+    await client.exec(migrations[1]!.statements[0]!)
+    await client.exec(migrations[1]!.sql)
+    await client.exec(migrations[1]!.sql)
+    const result = await client.query('select claim_order from workflow_timers')
+    expect(result.rows).toEqual([])
+  })
+
   test('records the applied schema migration during ensureSchema', async () => {
     const client = new PGlite()
     const db = drizzle(client)

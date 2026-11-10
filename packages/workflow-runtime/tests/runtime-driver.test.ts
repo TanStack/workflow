@@ -1027,6 +1027,64 @@ describe('workflow runtime driver', () => {
     expect(result.remainingMayExist).toBe(true)
   })
 
+  it('gives untouched timers their turn after repeated short sweeps', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'short-sweep', version }).handler(async (ctx) => {
+        await ctx.sleepUntil(100)
+        return true
+      })
+    let version = 'v1'
+    let wallNow = 0
+    let expireDuringLoad = false
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'short-sweep': {
+          load: async () => {
+            if (expireDuringLoad) wallNow = 1000
+            return define(version)
+          },
+        },
+      },
+    })
+    await runtime.startRun({
+      workflowId: 'short-sweep',
+      runId: 'a-missing',
+      input: {},
+      now: 0,
+    })
+    version = 'v2'
+    await runtime.startRun({
+      workflowId: 'short-sweep',
+      runId: 'z-healthy',
+      input: {},
+      now: 0,
+    })
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => wallNow)
+    try {
+      expireDuringLoad = true
+      const first = await runtime.sweep({
+        now: 100,
+        maxTimers: 10,
+        deadline: 500,
+        minYieldRemainingMs: 0,
+      })
+      expect(first.timers[0]?.kind).toBe('version-mismatch')
+      wallNow = 0
+      expireDuringLoad = false
+      const next = await runtime.sweep({
+        now: 100,
+        maxTimers: 1,
+        deadline: 500,
+        minYieldRemainingMs: 0,
+      })
+      expect(next.timers[0]?.kind).toBe('completed')
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
   it('bounds inspections while rotating past a backlog of missing versions', async () => {
     const store = inMemoryWorkflowExecutionStore()
     const define = (version: string) =>

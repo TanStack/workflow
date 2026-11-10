@@ -104,18 +104,20 @@ export function createCloudflareD1WorkflowStore(
       })) {
         await execute(db, statement)
       }
-      const applied = await query(
+      // Inspect this table, since custom stores may share a migration ledger.
+      const columns = await query<{ name: string }>(
         db,
-        `select migration_id from ${tables.schemaMigrations} where migration_id = ?`,
-        ['0001_fair_timer_claims'],
+        `pragma table_info(${tables.timers})`,
       )
-      if (!applied.length)
-        await executeMany(
-          db,
-          getCloudflareD1TimerFairnessStatements({ tables: tableNames }).map(
-            (sql) => statement(sql),
-          ),
-        )
+      const hasClaimOrder = columns.some(
+        (column) => column.name === 'claim_order',
+      )
+      await executeMany(
+        db,
+        getCloudflareD1TimerFairnessStatements({ tables: tableNames })
+          .filter((_, index) => index !== 0 || !hasClaimOrder)
+          .map((sql) => statement(sql)),
+      )
     },
 
     async createRun(args: CreateRunArgs): Promise<CreateRunResult> {

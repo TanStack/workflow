@@ -30,9 +30,14 @@ pnpm --filter @tanstack/workflow-store-cloudflare-d1 pack --dry-run
 Apply `migrations/0001_fair_timer_claims.sql` once before deploying the timer
 fairness runtime. It adds `claim_order` with a zero default, preserving existing
 timers and leases. Fresh databases apply `0000_workflow_store.sql` then `0001`.
-`ensureSchema()` checks the migration ledger and applies missing migrations;
+`ensureSchema()` checks the configured tables and safely completes this upgrade;
 run it once during deployment, before starting workers.
 
 `getCloudflareD1WorkflowStoreMigrationSql()` returns the complete SQL for a fresh
 installation. For upgrades, use `getCloudflareD1WorkflowStoreMigrations()` and apply
-only entries absent from the migration ledger. Both helpers support custom table names.
+only entries absent from the migration ledger. Give separate stores separate ledgers
+when using an external migration runner. Both helpers support custom table names.
+
+For D1, apply SQL files through Wrangler migrations. If a custom non-batch
+bootstrap was interrupted after adding the column, rerun `ensureSchema()` to
+finish the index and ledger entry without repeating the column addition.

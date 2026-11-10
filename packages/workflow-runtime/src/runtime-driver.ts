@@ -587,7 +587,8 @@ async function sweep<TWorkflows extends Record<string, WorkflowRegistration>>(
           () =>
             config.store.claimDueTimers({
               now,
-              limit: maxTimers - inspectedTimers,
+              // Claim only the next turn, so a deadline cannot rotate untouched timers.
+              limit: 1,
               leaseOwner,
               leaseMs,
             }),

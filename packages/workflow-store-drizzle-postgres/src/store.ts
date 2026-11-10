@@ -84,18 +84,14 @@ export function createDrizzlePostgresWorkflowStore(
       })) {
         await db.execute(sql.raw(statement))
       }
-      const applied = await queryRows(
-        db,
-        sql`select migration_id from ${tableSql.schemaMigrations} where migration_id = '0001_fair_timer_claims'`,
-      )
-      if (!applied.length)
-        await withTransaction(db, async (tx) => {
-          for (const statement of getDrizzlePostgresTimerFairnessStatements({
-            schema: options.schema,
-            tables: tableNames,
-          }))
-            await tx.execute(sql.raw(statement))
-        })
+      // Idempotent DDL checks each configured table, even with a shared ledger.
+      await withTransaction(db, async (tx) => {
+        for (const statement of getDrizzlePostgresTimerFairnessStatements({
+          schema: options.schema,
+          tables: tableNames,
+        }))
+          await tx.execute(sql.raw(statement))
+      })
     },
 
     async createRun(args: CreateRunArgs): Promise<CreateRunResult> {

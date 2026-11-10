@@ -133,6 +133,57 @@ describe('cloudflare-d1 schema contract', () => {
     ).toHaveLength(2)
   })
 
+  test('upgrades separate timer tables sharing a migration ledger', async () => {
+    const db = createTestD1Database()
+    const first = createCloudflareD1WorkflowStore({ db })
+    await first.ensureSchema()
+    const second = createCloudflareD1WorkflowStore({
+      db,
+      tables: { timers: 'other_timers' },
+    })
+    await second.ensureSchema()
+    await second.ensureSchema()
+    await second.scheduleTimer({
+      runId: 'a',
+      workflowId: 'workflow',
+      signalId: 'timer',
+      wakeAt: 100,
+      now: 0,
+    })
+    expect(
+      await second.claimDueTimers({
+        now: 100,
+        limit: 1,
+        leaseOwner: 'worker',
+        leaseMs: 50,
+      }),
+    ).toHaveLength(1)
+  })
+
+  test('resumes a non-batch upgrade after the column was added', async () => {
+    const db = createTestD1Database()
+    db.batch = undefined
+    await db.exec!(getCloudflareD1WorkflowStoreMigrations()[0]!.sql)
+    await db.exec!(
+      'alter table workflow_timers add column claim_order integer not null default 0',
+    )
+    const store = createCloudflareD1WorkflowStore({ db })
+    await store.ensureSchema()
+    await store.ensureSchema()
+    const indexes = await db
+      .prepare(
+        "select name from sqlite_master where name = 'workflow_timers_claim_order_idx'",
+      )
+      .all()
+    expect(indexes.results).toHaveLength(1)
+    const ledger = await db
+      .prepare(
+        "select migration_id from workflow_schema_migrations where migration_id = '0001_fair_timer_claims'",
+      )
+      .all()
+    expect(ledger.results).toHaveLength(1)
+  })
+
   test('records the applied schema migration during ensureSchema', async () => {
     const db = createTestD1Database()
     const store = createCloudflareD1WorkflowStore({ db })
