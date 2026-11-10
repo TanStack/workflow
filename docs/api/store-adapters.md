@@ -33,6 +33,10 @@ order and prefer the least recently claimed timers. This keeps each sweep
 bounded while giving other timers a turn on subsequent sweeps, even when a
 workflow version stays unavailable. Newly scheduled timers start unclaimed.
 
+Ordering within a claimed batch is not guaranteed. SQL stores give a batch one
+claim order, while the in-memory store assigns each timer its own order. Runtime
+sweeps claim one timer at a time so deadlines do not rotate untouched timers.
+
 `releaseTimerLease` clears a claim only when both `leaseOwner` and
 `leaseExpiresAt` match. A missing timer or a changed lease is a no-op. Sweeps
 release their batch in cleanup, including on a deadline or error, so unused
