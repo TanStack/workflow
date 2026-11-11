@@ -51,6 +51,7 @@ export type {
   ScheduleId,
   ScheduleTimerArgs,
   StoredWorkflowEvent,
+  ReleaseTimerLeaseArgs,
   TimerWakeup,
   UpsertScheduleArgs,
   WorkflowExecution,

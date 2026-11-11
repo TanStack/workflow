@@ -143,6 +143,13 @@ export interface ScheduleTimerArgs {
   now: number
 }
 
+export interface ReleaseTimerLeaseArgs {
+  runId: RunId
+  signalId: string
+  leaseOwner: LeaseOwner
+  leaseExpiresAt: number
+}
+
 export interface ClaimDueTimersArgs {
   now: number
   limit: number
@@ -320,6 +327,7 @@ export interface WorkflowExecutionStore extends WorkflowRunStoreAdapterStore {
   claimDueTimers: (
     args: ClaimDueTimersArgs,
   ) => Promise<ReadonlyArray<TimerWakeup>>
+  releaseTimerLease: (args: ReleaseTimerLeaseArgs) => Promise<void>
   deliverSignal: <TPayload = unknown>(
     args: DeliverSignalArgs<TPayload>,
   ) => Promise<DeliverSignalResult>
@@ -445,6 +453,7 @@ export type WorkflowRuntimeRunResultKind =
   | 'not-claimable'
   | 'not-waiting'
   | 'duplicate'
+  | 'version-mismatch'
 
 export interface WorkflowRuntimeRunResult {
   kind: WorkflowRuntimeRunResultKind

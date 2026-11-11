@@ -185,3 +185,15 @@ function normalizeSqlStatement(statement: string) {
     )
     .join('\n')
 }
+
+export function getCloudflareD1TimerFairnessStatements(
+  options: CloudflareD1WorkflowStoreSchemaOptions = {},
+): Array<string> {
+  const tables = resolveCloudflareD1WorkflowStoreTables(options.tables)
+  return [
+    `alter table ${quoteIdent(tables.timers)} add column claim_order integer not null default 0`,
+    `create index if not exists ${quoteIdent(`${tables.timers}_claim_order_idx`)} on ${quoteIdent(tables.timers)} (claim_order)`,
+    `insert into ${quoteIdent(tables.schemaMigrations)} (migration_id, package_name, package_version, applied_at)
+     values ('0001_fair_timer_claims', '@tanstack/workflow-store-cloudflare-d1', null, cast(unixepoch('subsec') * 1000 as integer)) on conflict (migration_id) do nothing`,
+  ].map(normalizeSqlStatement)
+}

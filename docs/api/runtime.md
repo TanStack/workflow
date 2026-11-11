@@ -210,7 +210,7 @@ Options:
 | `limit` | Backward-compatible shared limit for recoveries, schedules, and timers. |
 | `maxRecoveredRuns` | Maximum expired running executions to recover. |
 | `maxScheduledRuns` | Maximum due schedule buckets to start. |
-| `maxTimers` | Maximum due timers to resume. |
+| `maxTimers` | Maximum due timers to inspect, including unavailable workflow versions. Stores rotate claims across sweeps so rejected timers do not starve other work. |
 | `deadline` | Absolute wall-clock deadline in UTC milliseconds. |
 | `maxDurationMs` | Wall-clock budget for this sweep. |
 | `minYieldRemainingMs` | Stops claims and fresh durable work inside this margin. |
@@ -233,8 +233,8 @@ interface WorkflowRuntimeSweepResult {
 }
 ```
 
-`remainingMayExist` means the sweep stopped at a count or time budget, so more
-due work may be available.
+`remainingMayExist` means the sweep stopped at a count or time budget, or
+rejected a timer whose workflow version is unavailable. More due work may remain.
 
 ## `cron`
 

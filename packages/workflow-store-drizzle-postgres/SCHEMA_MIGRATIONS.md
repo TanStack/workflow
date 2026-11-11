@@ -83,3 +83,19 @@ pnpm test:sherif
 ```
 
 Confirm the dry-run tarball includes every SQL file under `migrations/`.
+
+## Upgrading existing stores
+
+Apply `migrations/0001_fair_timer_claims.sql` once before deploying the timer
+fairness runtime. It adds `claim_order` with a zero default, preserving existing
+timers and leases. Fresh databases apply `0000_workflow_store.sql` then `0001`.
+`ensureSchema()` checks the configured tables and safely completes this upgrade;
+run it once during deployment, before starting workers.
+
+`getDrizzlePostgresWorkflowStoreMigrationSql()` returns the complete SQL for a fresh
+installation. For upgrades, use `getDrizzlePostgresWorkflowStoreMigrations()` and apply
+only entries absent from the migration ledger. Give separate stores separate ledgers
+when using an external migration runner. Both helpers support custom table names.
+
+The PostgreSQL migration can be rerun safely. Use `psql -v ON_ERROR_STOP=1
+--single-transaction` so a failed statement stops deployment and rolls back the migration.

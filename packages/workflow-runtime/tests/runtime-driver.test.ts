@@ -731,6 +731,483 @@ describe('workflow runtime driver', () => {
     expect(due.timers[0]?.kind).toBe('completed')
   })
 
+  it('rejects a signal for an unregistered version without consuming it', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'versioned', version }).handler(async (ctx) => {
+        return ctx.waitForEvent<{ ok: boolean }>('go', { id: 'go' })
+      })
+    const v1 = defineWorkflowRuntime({
+      store,
+      workflows: { versioned: { load: async () => define('v1') } },
+    })
+    const v2 = defineWorkflowRuntime({
+      store,
+      workflows: { versioned: { load: async () => define('v2') } },
+    })
+
+    const start = await v1.startRun({
+      workflowId: 'versioned',
+      runId: 'versioned:1',
+      input: {},
+      now: 0,
+    })
+    const rejected = await v2.deliverSignal({
+      runId: 'versioned:1',
+      stepId: 'go',
+      signalId: 'signal-1',
+      name: 'go',
+      payload: { ok: true },
+      now: 10,
+    })
+    const afterReject = await store.loadRun('versioned:1')
+    const resumed = await v1.deliverSignal({
+      runId: 'versioned:1',
+      stepId: 'go',
+      signalId: 'signal-1',
+      name: 'go',
+      payload: { ok: true },
+      now: 20,
+    })
+
+    expect(start.kind).toBe('paused')
+    expect(rejected.kind).toBe('version-mismatch')
+    expect(rejected.run?.status).toBe('paused')
+    expect(afterReject?.status).toBe('paused')
+    expect(afterReject?.lease).toBeUndefined()
+    expect(resumed.kind).toBe('completed')
+  })
+
+  it('checks replay state when the execution summary has no version', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'legacy-summary', version }).handler(async (ctx) =>
+        ctx.waitForEvent('go', { id: 'go' }),
+      )
+    const old = defineWorkflowRuntime({
+      store,
+      workflows: { 'legacy-summary': { load: async () => define('v1') } },
+    })
+    await old.startRun({
+      workflowId: 'legacy-summary',
+      runId: 'legacy',
+      input: {},
+    })
+    const loadRun = store.loadRun.bind(store)
+    vi.spyOn(store, 'loadRun').mockImplementation(async (runId) => {
+      const run = await loadRun(runId)
+      return run ? { ...run, workflowVersion: undefined } : undefined
+    })
+    const current = defineWorkflowRuntime({
+      store,
+      workflows: { 'legacy-summary': { load: async () => define('v2') } },
+    })
+    const delivery = {
+      runId: 'legacy',
+      signalId: 'go-1',
+      name: 'go',
+      stepId: 'go',
+      payload: true,
+    }
+    expect((await current.deliverSignal(delivery)).kind).toBe(
+      'version-mismatch',
+    )
+    expect((await store.loadRun('legacy'))?.status).toBe('paused')
+    expect((await old.deliverSignal(delivery)).kind).toBe('completed')
+  })
+
+  it('preserves duplicate delivery results after a workflow is unregistered', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const workflow = createWorkflow({ id: 'retired', version: 'v1' }).handler(
+      async (ctx) => ctx.waitForEvent('go', { id: 'go' }),
+    )
+    const old = defineWorkflowRuntime({
+      store,
+      workflows: { retired: { load: async () => workflow } },
+    })
+    await old.startRun({ workflowId: 'retired', runId: 'retired', input: {} })
+    const delivery = {
+      runId: 'retired',
+      signalId: 'go-1',
+      name: 'go',
+      stepId: 'go',
+      payload: true,
+    }
+    expect((await old.deliverSignal(delivery)).kind).toBe('completed')
+    const current = defineWorkflowRuntime({ store, workflows: {} })
+    expect((await current.deliverSignal(delivery)).kind).toBe('duplicate')
+  })
+
+  it('rejects an approval for an unregistered version without consuming it', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'approval', version }).handler(async (ctx) => {
+        return ctx.approve({ title: 'Ship it?' })
+      })
+    const v1 = defineWorkflowRuntime({
+      store,
+      workflows: { approval: { load: async () => define('v1') } },
+    })
+    const v2 = defineWorkflowRuntime({
+      store,
+      workflows: { approval: { load: async () => define('v2') } },
+    })
+
+    await v1.startRun({
+      workflowId: 'approval',
+      runId: 'approval:1',
+      input: {},
+      now: 0,
+    })
+    const approvalId = (await store.loadRun('approval:1'))?.pendingApproval
+      ?.approvalId
+    const approval = { approvalId: approvalId!, approved: true }
+    const rejected = await v2.deliverApproval({
+      runId: 'approval:1',
+      approval,
+      now: 10,
+    })
+    const afterReject = await store.loadRun('approval:1')
+    const resumed = await v1.deliverApproval({
+      runId: 'approval:1',
+      approval,
+      now: 20,
+    })
+
+    expect(approvalId).toBeDefined()
+    expect(rejected.kind).toBe('version-mismatch')
+    expect(afterReject?.status).toBe('paused')
+    expect(resumed.kind).toBe('completed')
+  })
+
+  it('leaves a timer pending when its run version is unregistered', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'sleeper', version }).handler(async (ctx) => {
+        await ctx.sleepUntil(100)
+        return { awoke: true }
+      })
+    const v1 = defineWorkflowRuntime({
+      store,
+      workflows: { sleeper: { load: async () => define('v1') } },
+    })
+    const v2 = defineWorkflowRuntime({
+      store,
+      workflows: { sleeper: { load: async () => define('v2') } },
+    })
+
+    await v1.startRun({
+      workflowId: 'sleeper',
+      runId: 'sleeper:1',
+      input: {},
+      now: 0,
+    })
+    const rejected = await v2.sweep({ now: 100, leaseMs: 50 })
+    const afterReject = await store.loadRun('sleeper:1')
+    const resumed = await v1.sweep({ now: 200 })
+
+    expect(rejected.timers.map((timer) => timer.kind)).toEqual([
+      'version-mismatch',
+    ])
+    expect(afterReject?.status).toBe('paused')
+    expect(resumed.timers.map((timer) => timer.kind)).toEqual(['completed'])
+  })
+
+  it('accepts a signal for a version registered via previousVersions', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'migrated', version }).handler(async (ctx) => {
+        await ctx.waitForEvent<{ ok: boolean }>('go', { id: 'go' })
+        return { version }
+      })
+    const v1 = defineWorkflowRuntime({
+      store,
+      workflows: { migrated: { load: async () => define('v1') } },
+    })
+    const v2 = defineWorkflowRuntime({
+      store,
+      workflows: {
+        migrated: {
+          load: async () => define('v2'),
+          previousVersions: { v1: async () => define('v1') },
+        },
+      },
+    })
+
+    await v1.startRun({
+      workflowId: 'migrated',
+      runId: 'migrated:1',
+      input: {},
+      now: 0,
+    })
+    const resumed = await v2.deliverSignal({
+      runId: 'migrated:1',
+      stepId: 'go',
+      signalId: 'signal-1',
+      name: 'go',
+      payload: { ok: true },
+      now: 10,
+    })
+
+    expect(resumed.kind).toBe('completed')
+    expect(resumed.run?.output).toEqual({ version: 'v1' })
+  })
+
+  it('executes the same workflow definition that passed the delivery check', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'loaded-once', version }).handler(async (ctx) =>
+        ctx.waitForEvent('go', { id: 'go' }),
+      )
+    const first = define('v1')
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(first)
+      .mockResolvedValue(define('v2'))
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: { 'loaded-once': { load } },
+    })
+    await runtime.startRun({
+      workflowId: 'loaded-once',
+      runId: 'once',
+      input: {},
+    })
+    const result = await runtime.deliverSignal({
+      runId: 'once',
+      name: 'go',
+      stepId: 'go',
+      signalId: 'go-1',
+      payload: true,
+    })
+    expect(result.kind).toBe('completed')
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('continues to other due timers when one workflow version is missing', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (id: string, version: string) =>
+      createWorkflow({ id, version }).handler(async (ctx) => {
+        await ctx.sleepUntil(100)
+        return true
+      })
+    const old = defineWorkflowRuntime({
+      store,
+      workflows: {
+        missing: { load: async () => define('missing', 'v1') },
+        available: { load: async () => define('available', 'v1') },
+      },
+    })
+    await old.startRun({
+      workflowId: 'missing',
+      runId: 'a-missing',
+      input: {},
+      now: 0,
+    })
+    await old.startRun({
+      workflowId: 'available',
+      runId: 'z-available',
+      input: {},
+      now: 0,
+    })
+    const current = defineWorkflowRuntime({
+      store,
+      workflows: {
+        missing: { load: async () => define('missing', 'v2') },
+        available: { load: async () => define('available', 'v1') },
+      },
+    })
+    const result = await current.sweep({ now: 100, maxTimers: 1 })
+    expect(result.timers.map((timer) => timer.kind)).toEqual([
+      'version-mismatch',
+    ])
+    const next = await current.sweep({ now: 100, maxTimers: 1 })
+    expect(next.timers.map((timer) => timer.kind)).toEqual(['completed'])
+    expect(result.remainingMayExist).toBe(true)
+  })
+
+  it('gives untouched timers their turn after repeated short sweeps', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'short-sweep', version }).handler(async (ctx) => {
+        await ctx.sleepUntil(100)
+        return true
+      })
+    let version = 'v1'
+    let wallNow = 0
+    let expireDuringLoad = false
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: {
+        'short-sweep': {
+          load: async () => {
+            if (expireDuringLoad) wallNow = 1000
+            return define(version)
+          },
+        },
+      },
+    })
+    await runtime.startRun({
+      workflowId: 'short-sweep',
+      runId: 'a-missing',
+      input: {},
+      now: 0,
+    })
+    version = 'v2'
+    await runtime.startRun({
+      workflowId: 'short-sweep',
+      runId: 'z-healthy',
+      input: {},
+      now: 0,
+    })
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => wallNow)
+    try {
+      expireDuringLoad = true
+      const first = await runtime.sweep({
+        now: 100,
+        maxTimers: 10,
+        deadline: 500,
+        minYieldRemainingMs: 0,
+      })
+      expect(first.timers[0]?.kind).toBe('version-mismatch')
+      wallNow = 0
+      expireDuringLoad = false
+      const next = await runtime.sweep({
+        now: 100,
+        maxTimers: 1,
+        deadline: 500,
+        minYieldRemainingMs: 0,
+      })
+      expect(next.timers[0]?.kind).toBe('completed')
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it('bounds inspections while rotating past a backlog of missing versions', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const define = (version: string) =>
+      createWorkflow({ id: 'backlog', version }).handler(async (ctx) => {
+        await ctx.sleepUntil(100)
+        return true
+      })
+    const old = defineWorkflowRuntime({
+      store,
+      workflows: { backlog: { load: async () => define('v1') } },
+    })
+    for (let i = 0; i < 4; i++)
+      await old.startRun({
+        workflowId: 'backlog',
+        runId: `missing-${i}`,
+        input: {},
+        now: 0,
+      })
+    const current = defineWorkflowRuntime({
+      store,
+      workflows: { backlog: { load: async () => define('v2') } },
+    })
+    await current.startRun({
+      workflowId: 'backlog',
+      runId: 'z-healthy',
+      input: {},
+      now: 0,
+    })
+    const claim = vi.spyOn(store, 'claimDueTimers')
+    for (let i = 0; i < 5; i++) {
+      claim.mockClear()
+      const sweep = await current.sweep({ now: 100, maxTimers: 1 })
+      expect(claim).toHaveBeenCalledTimes(1)
+      expect(sweep.timers).toHaveLength(1)
+      expect(sweep.timers[0]?.kind).toBe(
+        i < 4 ? 'version-mismatch' : 'completed',
+      )
+    }
+  })
+
+  it('resumes newly created timers even when their IDs sort earlier', async () => {
+    const store = inMemoryWorkflowExecutionStore()
+    const workflow = createWorkflow({ id: 'reverse-timers' }).handler(
+      async (ctx) => {
+        await ctx.sleepUntil(100, { id: 'z' })
+        await ctx.sleepUntil(100, { id: 'a' })
+        return true
+      },
+    )
+    const runtime = defineWorkflowRuntime({
+      store,
+      workflows: { 'reverse-timers': { load: async () => workflow } },
+    })
+    await runtime.startRun({
+      workflowId: 'reverse-timers',
+      runId: 'reverse',
+      input: {},
+      now: 0,
+    })
+    expect(
+      (await runtime.sweep({ now: 100, maxTimers: 3 })).timers.map(
+        (t) => t.kind,
+      ),
+    ).toEqual(['paused', 'completed'])
+  })
+
+  it.each(['deadline', 'error'])(
+    'releases a timer batch after %s',
+    async (stop) => {
+      const store = inMemoryWorkflowExecutionStore()
+      const workflow = createWorkflow({ id: 'release-timers' }).handler(
+        async (ctx) => {
+          await ctx.sleepUntil(100)
+          return true
+        },
+      )
+      const runtime = defineWorkflowRuntime({
+        store,
+        workflows: { 'release-timers': { load: async () => workflow } },
+      })
+      for (const runId of ['a', 'b'])
+        await runtime.startRun({
+          workflowId: 'release-timers',
+          runId,
+          input: {},
+          now: 0,
+        })
+      let wallNow = 0
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => wallNow)
+      const claim = store.claimDueTimers.bind(store)
+      vi.spyOn(store, 'claimDueTimers').mockImplementation(async (args) => {
+        const timers = await claim(args)
+        if (stop === 'deadline') wallNow = 1000
+        return timers
+      })
+      if (stop === 'error')
+        vi.spyOn(store, 'loadRun').mockRejectedValue(
+          new Error('storage unavailable'),
+        )
+      try {
+        const sweep = runtime.sweep({
+          now: 100,
+          maxTimers: 2,
+          deadline: 500,
+          minYieldRemainingMs: 0,
+        })
+        if (stop === 'error')
+          await expect(sweep).rejects.toThrow('storage unavailable')
+        else expect((await sweep).deadlineReached).toBe(true)
+        expect(
+          await claim({
+            now: 100,
+            limit: 2,
+            leaseOwner: 'next-worker',
+            leaseMs: 50,
+          }),
+        ).toHaveLength(2)
+      } finally {
+        clock.mockRestore()
+      }
+    },
+  )
+
   it('sweeps due schedule buckets into deterministic runs', async () => {
     const store = inMemoryWorkflowExecutionStore()
     const workflow = createWorkflow({ id: 'scheduled' }).handler(

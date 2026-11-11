@@ -135,7 +135,7 @@ during setup/deploy instead of copying `workflow_*` tables into your app's
 Drizzle schema.
 
 ```bash
-psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+psql -v ON_ERROR_STOP=1 --single-transaction "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql
 ```
 
 If your deploy system wants a package script:
@@ -143,7 +143,7 @@ If your deploy system wants a package script:
 ```json
 {
   "scripts": {
-    "workflow:migrate": "psql \"$DATABASE_URL\" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql"
+    "workflow:migrate": "psql -v ON_ERROR_STOP=1 --single-transaction \"$DATABASE_URL\" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql"
   }
 }
 ```
@@ -201,9 +201,15 @@ export async function POST(request: Request) {
     includeEvents: false,
   })
 
-  return Response.json({ kind: result.kind })
+  return Response.json(
+    { kind: result.kind },
+    { status: result.kind === 'version-mismatch' ? 503 : 200 },
+  )
 }
 ```
+
+The sender must retry 503 responses with the same event ID. If it cannot retry,
+store the delivery in a durable inbox before acknowledging it.
 
 ## Wait for approval
 

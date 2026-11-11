@@ -236,6 +236,82 @@ export function runWorkflowExecutionStoreContractTests(
       expect(reclaimed).toHaveLength(1)
     })
 
+    it('rotates timer claims and releases only the matching lease', async () => {
+      const store = await options.createStore()
+      for (const runId of ['c', 'b', 'a']) {
+        await store.createRun({
+          runId,
+          workflowId: 'timer-workflow',
+          input: {},
+          now: 0,
+        })
+        await store.scheduleTimer({
+          runId,
+          workflowId: 'timer-workflow',
+          signalId: 'timer',
+          wakeAt: 100,
+          now: 0,
+        })
+      }
+      const claim = { now: 100, limit: 1, leaseOwner: 'worker-a', leaseMs: 50 }
+      const first = await store.claimDueTimers(claim)
+      expect(first.map((t) => t.runId)).toEqual(['a'])
+      const second = await store.claimDueTimers(claim)
+      expect(second.map((t) => t.runId)).toEqual(['b'])
+      await store.releaseTimerLease({
+        runId: 'a',
+        signalId: 'timer',
+        leaseOwner: 'wrong-worker',
+        leaseExpiresAt: 150,
+      })
+      expect(
+        (
+          await store.claimDueTimers({
+            ...claim,
+            limit: 3,
+            leaseOwner: 'worker-b',
+          })
+        ).map((t) => t.runId),
+      ).toEqual(['c'])
+      await store.releaseTimerLease({
+        runId: 'a',
+        signalId: 'timer',
+        leaseOwner: 'worker-a',
+        leaseExpiresAt: 150,
+      })
+      expect(
+        (
+          await store.claimDueTimers({
+            ...claim,
+            limit: 1,
+            leaseOwner: 'worker-b',
+          })
+        ).map((t) => t.runId),
+      ).toEqual(['a'])
+      // An expired claim must not clear a newer lease, even for the same owner.
+      await store.claimDueTimers({
+        ...claim,
+        now: 151,
+        limit: 3,
+        leaseOwner: 'worker-b',
+      })
+      await store.releaseTimerLease({
+        runId: 'a',
+        signalId: 'timer',
+        leaseOwner: 'worker-b',
+        leaseExpiresAt: 150,
+      })
+      expect(
+        (
+          await store.claimDueTimers({
+            ...claim,
+            now: 152,
+            leaseOwner: 'worker-c',
+          })
+        ).map((t) => t.runId),
+      ).not.toContain('a')
+    })
+
     it('delivers signals idempotently and marks the run ready', async () => {
       const store = await options.createStore()
       await store.saveRunState({
