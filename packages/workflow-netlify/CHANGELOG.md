@@ -4,7 +4,7 @@
 
 ### Patch Changes
 
-- Updated dependencies [[`b928717`](https://github.com/TanStack/workflow/commit/b9287174b44424059895a0ed834b18ce50e0484a)]:
+- Updated dependencies [[`b928717`](https://github.com/TanStack/workflow/commit/b9287174b44424059895a0ed834b18ce50e0484a), [`c6a78fc`](https://github.com/TanStack/workflow/commit/c6a78fc50f2d2aabadc3e4bfb4d989bec2b16f8c), [`c6a78fc`](https://github.com/TanStack/workflow/commit/c6a78fc50f2d2aabadc3e4bfb4d989bec2b16f8c)]:
   - @tanstack/workflow-runtime@0.0.4
 
 ## 0.0.4
