@@ -29,6 +29,7 @@ import type {
   MarkScheduleBucketStartedArgs,
   ReadEventsArgs,
   ReleaseRunLeaseArgs,
+  ReleaseTimerLeaseArgs,
   RunClaim,
   RunId,
   RunSummary,
@@ -48,6 +49,7 @@ import type {
 } from './types'
 
 interface TimerRecord extends TimerWakeup {
+  claimOrder?: number
   lease?: WorkflowLease
 }
 
@@ -74,6 +76,7 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
   const runStates = new Map<RunId, RunState>()
   const logs = new Map<RunId, Array<StoredWorkflowEvent>>()
   const timers = new Map<string, TimerRecord>()
+  let timerClaimOrder = 0
   const signalDeliveries = new Map<string, true>()
   const schedules = new Map<ScheduleId, ScheduleRecord>()
   const scheduleBuckets = new Map<string, ScheduleBucketRecord>()
@@ -301,18 +304,37 @@ export function inMemoryWorkflowExecutionStore(): InMemoryWorkflowExecutionStore
 
     async claimDueTimers(args: ClaimDueTimersArgs) {
       const due: Array<TimerWakeup> = []
-      for (const [key, timer] of timers.entries()) {
+      const ordered = [...timers.entries()].sort(
+        ([, a], [, b]) =>
+          (a.claimOrder ?? 0) - (b.claimOrder ?? 0) ||
+          a.wakeAt - b.wakeAt ||
+          (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0) ||
+          (a.signalId < b.signalId ? -1 : a.signalId > b.signalId ? 1 : 0),
+      )
+      for (const [key, timer] of ordered) {
         if (due.length >= args.limit) break
         if (timer.wakeAt > args.now) continue
         if (!canClaim(timer.lease, args.leaseOwner, args.now)) continue
 
         timers.set(key, {
           ...timer,
+          claimOrder: ++timerClaimOrder,
           lease: lease(args.leaseOwner, args.leaseMs, args.now),
         })
         due.push(cloneTimerWakeup(timer))
       }
       return due
+    },
+
+    async releaseTimerLease(args: ReleaseTimerLeaseArgs) {
+      const key = timerKey(args.runId, args.signalId)
+      const timer = timers.get(key)
+      if (
+        timer?.lease?.owner === args.leaseOwner &&
+        timer.lease.expiresAt === args.leaseExpiresAt
+      ) {
+        timers.set(key, { ...timer, lease: undefined })
+      }
     },
 
     async deliverSignal<TPayload>(

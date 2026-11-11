@@ -1,6 +1,7 @@
 import { LogConflictError } from '@tanstack/workflow-core'
 import { sql } from 'drizzle-orm'
 import {
+  getDrizzlePostgresTimerFairnessStatements,
   getDrizzlePostgresWorkflowStoreSchemaStatements,
   qualifiedTableName,
   resolveDrizzlePostgresWorkflowStoreTables,
@@ -31,6 +32,7 @@ import type {
   MarkScheduleBucketStartedArgs,
   ReadEventsArgs,
   ReleaseRunLeaseArgs,
+  ReleaseTimerLeaseArgs,
   RunClaim,
   RunId,
   RunSummary,
@@ -82,6 +84,14 @@ export function createDrizzlePostgresWorkflowStore(
       })) {
         await db.execute(sql.raw(statement))
       }
+      // Idempotent DDL checks each configured table, even with a shared ledger.
+      await withTransaction(db, async (tx) => {
+        for (const statement of getDrizzlePostgresTimerFairnessStatements({
+          schema: options.schema,
+          tables: tableNames,
+        }))
+          await tx.execute(sql.raw(statement))
+      })
     },
 
     async createRun(args: CreateRunArgs): Promise<CreateRunResult> {
@@ -484,21 +494,34 @@ export function createDrizzlePostgresWorkflowStore(
                 or lease_owner = ${args.leaseOwner}
                 or lease_expires_at <= ${args.now}
               )
-            order by wake_at asc, run_id asc, signal_id asc
+            order by claim_order asc, wake_at asc, run_id asc, signal_id asc
             limit ${args.limit}
             for update skip locked
-          )
+          ), claimed as (
           update ${tableSql.timers} timer
           set
+            claim_order = (select coalesce(max(claim_order), 0) + 1 from ${tableSql.timers}),
             lease_owner = ${args.leaseOwner},
             lease_expires_at = ${args.now + args.leaseMs}
           from due
           where timer.run_id = due.run_id
             and timer.signal_id = due.signal_id
           returning timer.*
+          )
+          select * from claimed order by claim_order asc, wake_at asc, run_id asc, signal_id asc
         `,
       )
       return rows.map(timerFromRow)
+    },
+
+    async releaseTimerLease(args: ReleaseTimerLeaseArgs) {
+      await db.execute(sql`
+        update ${tableSql.timers}
+        set lease_owner = null, lease_expires_at = null
+        where run_id = ${args.runId} and signal_id = ${args.signalId}
+          and lease_owner = ${args.leaseOwner}
+          and lease_expires_at = ${args.leaseExpiresAt}
+      `)
     },
 
     async deliverSignal<TPayload>(
@@ -800,6 +823,7 @@ export function createDrizzlePostgresWorkflowStore(
 }
 
 interface TableSqls {
+  schemaMigrations: SQL
   runs: SQL
   runStates: SQL
   eventLocks: SQL
@@ -885,6 +909,9 @@ function tableSqls(
   tables: DrizzlePostgresWorkflowStoreTables,
 ): TableSqls {
   return {
+    schemaMigrations: sql.raw(
+      qualifiedTableName(schema, tables.schemaMigrations),
+    ),
     runs: sql.raw(qualifiedTableName(schema, tables.runs)),
     runStates: sql.raw(qualifiedTableName(schema, tables.runStates)),
     eventLocks: sql.raw(qualifiedTableName(schema, tables.eventLocks)),

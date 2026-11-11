@@ -17,7 +17,7 @@ The runtime store contract includes:
 | Run lifecycle | `createRun`, `loadRun`, `loadExecution`, `markRunPaused`, `markRunFinished`, `markRunErrored` |
 | Event log | `appendEvents`, `readEvents`, optional `subscribeEvents` |
 | Leases | `claimRun`, `heartbeatRunLease`, `releaseRunLease`, `claimStaleRuns` |
-| Timers | `scheduleTimer`, `claimDueTimers` |
+| Timers | `scheduleTimer`, `claimDueTimers`, `releaseTimerLease` |
 | Signals | `deliverSignal` |
 | Approvals | `deliverApproval` |
 | Schedules | `upsertSchedule`, `claimDueScheduleBuckets`, `markScheduleBucketStarted` |
@@ -25,6 +25,24 @@ The runtime store contract includes:
 
 Adapter authors should run the shared contract tests from
 `@tanstack/workflow-runtime`.
+
+### Timer claims
+
+`claimDueTimers` returns at most `limit` due timers. Stores persist a claim
+order and prefer the least recently claimed timers. This keeps each sweep
+bounded while giving other timers a turn on subsequent sweeps, even when a
+workflow version stays unavailable. Newly scheduled timers start unclaimed.
+
+Ordering within a claimed batch is not guaranteed. SQL stores give a batch one
+claim order, while the in-memory store assigns each timer its own order. Runtime
+sweeps claim one timer at a time so deadlines do not rotate untouched timers.
+
+`releaseTimerLease` clears a claim only when both `leaseOwner` and
+`leaseExpiresAt` match. A missing timer or a changed lease is a no-op. Sweeps
+release their batch in cleanup, including on a deadline or error, so unused
+claims do not block other workers. Custom stores must implement fair claims
+and lease release. Existing SQL stores must apply `0001_fair_timer_claims.sql`
+before deploying this runtime. `ensureSchema()` also applies this migration.
 
 ## Drizzle/Postgres
 
@@ -48,7 +66,7 @@ const store = createDrizzlePostgresWorkflowStore({ db })
 Apply the package-owned migration during setup/deploy:
 
 ```bash
-psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+psql -v ON_ERROR_STOP=1 --single-transaction "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql
 ```
 
 Use it in the runtime:
@@ -87,7 +105,7 @@ the SQL artifact from the installed package instead of mirroring `workflow_*`
 tables in application Drizzle schema files.
 
 ```bash
-psql "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql
+psql -v ON_ERROR_STOP=1 --single-transaction "$DATABASE_URL" -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0000_workflow_store.sql -f node_modules/@tanstack/workflow-store-drizzle-postgres/migrations/0001_fair_timer_claims.sql
 ```
 
 Programmatic setup can use the exported migration helpers:
@@ -133,6 +151,7 @@ Apply the package-owned D1 migration during setup/deploy:
 
 ```txt
 node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0000_workflow_store.sql
+node_modules/@tanstack/workflow-store-cloudflare-d1/migrations/0001_fair_timer_claims.sql
 ```
 
 Programmatic setup can use the exported migration helpers:

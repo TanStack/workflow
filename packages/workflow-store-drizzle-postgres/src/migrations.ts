@@ -1,4 +1,7 @@
-import { getDrizzlePostgresWorkflowStoreSchemaStatements } from './schema-contract'
+import {
+  getDrizzlePostgresTimerFairnessStatements,
+  getDrizzlePostgresWorkflowStoreSchemaStatements,
+} from './schema-contract'
 import type { DrizzlePostgresWorkflowStoreSchemaOptions } from './schema-contract'
 
 export interface DrizzlePostgresWorkflowStoreMigration {
@@ -9,7 +12,8 @@ export interface DrizzlePostgresWorkflowStoreMigration {
   sql: string
 }
 
-export const drizzlePostgresWorkflowStoreSchemaVersion = '0000_workflow_store'
+export const drizzlePostgresWorkflowStoreSchemaVersion =
+  '0001_fair_timer_claims'
 
 export function getDrizzlePostgresWorkflowStoreMigrations(
   options?: DrizzlePostgresWorkflowStoreSchemaOptions,
@@ -24,11 +28,20 @@ export function getDrizzlePostgresWorkflowStoreMigrations(
       statements,
       sql: `${statements.join(';\n\n')};\n`,
     },
+    {
+      id: '0001_fair_timer_claims',
+      name: 'Fair timer claims',
+      order: 1,
+      statements: getDrizzlePostgresTimerFairnessStatements(options),
+      sql: `${getDrizzlePostgresTimerFairnessStatements(options).join(';\n\n')};\n`,
+    },
   ]
 }
 
 export function getDrizzlePostgresWorkflowStoreMigrationSql(
   options?: DrizzlePostgresWorkflowStoreSchemaOptions,
 ): string {
-  return getDrizzlePostgresWorkflowStoreMigrations(options)[0]!.sql
+  return getDrizzlePostgresWorkflowStoreMigrations(options)
+    .map((migration) => migration.sql)
+    .join('\n')
 }

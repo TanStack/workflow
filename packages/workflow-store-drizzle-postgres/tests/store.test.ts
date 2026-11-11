@@ -28,7 +28,17 @@ describe('drizzle-postgres schema contract', () => {
     )
     const migrationSql = await readFile(migrationFile, 'utf8')
 
-    expect(getDrizzlePostgresWorkflowStoreMigrationSql()).toBe(migrationSql)
+    expect(getDrizzlePostgresWorkflowStoreMigrationSql()).toBe(
+      getDrizzlePostgresWorkflowStoreMigrations()
+        .map((migration) => migration.sql)
+        .join('\n'),
+    )
+    expect(getDrizzlePostgresWorkflowStoreMigrations()[1]!.sql).toBe(
+      await readFile(
+        new URL('../migrations/0001_fair_timer_claims.sql', import.meta.url),
+        'utf8',
+      ),
+    )
     expect(getDrizzlePostgresWorkflowStoreMigrations()).toEqual([
       {
         id: '0000_workflow_store',
@@ -36,6 +46,13 @@ describe('drizzle-postgres schema contract', () => {
         order: 0,
         statements: expect.any(Array),
         sql: migrationSql,
+      },
+      {
+        id: '0001_fair_timer_claims',
+        name: 'Fair timer claims',
+        order: 1,
+        statements: expect.any(Array),
+        sql: expect.any(String),
       },
     ])
   })
@@ -58,6 +75,71 @@ describe('drizzle-postgres schema contract', () => {
     )
   })
 
+  test('upgrades existing timers and preserves fairness across store instances', async () => {
+    const client = new PGlite()
+    const db = drizzle(client)
+    await client.exec(getDrizzlePostgresWorkflowStoreMigrations()[0]!.sql)
+    await client.exec(
+      `insert into workflow_timers (run_id, signal_id, workflow_id, wake_at, lease_owner, lease_expires_at) values ('a', 'timer', 'workflow', 100, 'old-worker', 50), ('b', 'timer', 'workflow', 100, null, null)`,
+    )
+    const store = createDrizzlePostgresWorkflowStore({ db })
+    await store.ensureSchema()
+    await store.ensureSchema()
+    const args = { now: 100, limit: 1, leaseOwner: 'worker', leaseMs: 50 }
+    expect((await store.claimDueTimers(args)).map((t) => t.runId)).toEqual([
+      'a',
+    ])
+    await store.releaseTimerLease({
+      runId: 'a',
+      signalId: 'timer',
+      leaseOwner: 'worker',
+      leaseExpiresAt: 150,
+    })
+    const restarted = createDrizzlePostgresWorkflowStore({ db })
+    expect((await restarted.claimDueTimers(args)).map((t) => t.runId)).toEqual([
+      'b',
+    ])
+  })
+
+  test('upgrades separate timer tables sharing a migration ledger', async () => {
+    const client = new PGlite()
+    const db = drizzle(client)
+    const first = createDrizzlePostgresWorkflowStore({ db })
+    await first.ensureSchema()
+    const second = createDrizzlePostgresWorkflowStore({
+      db,
+      tables: { timers: 'other_timers' },
+    })
+    await second.ensureSchema()
+    await second.ensureSchema()
+    await second.scheduleTimer({
+      runId: 'a',
+      workflowId: 'workflow',
+      signalId: 'timer',
+      wakeAt: 100,
+      now: 0,
+    })
+    expect(
+      await second.claimDueTimers({
+        now: 100,
+        limit: 1,
+        leaseOwner: 'worker',
+        leaseMs: 50,
+      }),
+    ).toHaveLength(1)
+  })
+
+  test('retries the exported migration after a partial application', async () => {
+    const client = new PGlite()
+    const migrations = getDrizzlePostgresWorkflowStoreMigrations()
+    await client.exec(migrations[0]!.sql)
+    await client.exec(migrations[1]!.statements[0]!)
+    await client.exec(migrations[1]!.sql)
+    await client.exec(migrations[1]!.sql)
+    const result = await client.query('select claim_order from workflow_timers')
+    expect(result.rows).toEqual([])
+  })
+
   test('records the applied schema migration during ensureSchema', async () => {
     const client = new PGlite()
     const db = drizzle(client)
@@ -73,6 +155,10 @@ describe('drizzle-postgres schema contract', () => {
     )
 
     expect(result.rows).toEqual([
+      {
+        migration_id: '0000_workflow_store',
+        package_name: '@tanstack/workflow-store-drizzle-postgres',
+      },
       {
         migration_id: drizzlePostgresWorkflowStoreSchemaVersion,
         package_name: '@tanstack/workflow-store-drizzle-postgres',

@@ -1,4 +1,7 @@
-import { getCloudflareD1WorkflowStoreSchemaStatements } from './schema-contract'
+import {
+  getCloudflareD1TimerFairnessStatements,
+  getCloudflareD1WorkflowStoreSchemaStatements,
+} from './schema-contract'
 import type { CloudflareD1WorkflowStoreSchemaOptions } from './schema-contract'
 
 export interface CloudflareD1WorkflowStoreMigration {
@@ -9,7 +12,7 @@ export interface CloudflareD1WorkflowStoreMigration {
   sql: string
 }
 
-export const cloudflareD1WorkflowStoreSchemaVersion = '0000_workflow_store'
+export const cloudflareD1WorkflowStoreSchemaVersion = '0001_fair_timer_claims'
 
 export function getCloudflareD1WorkflowStoreMigrations(
   options?: CloudflareD1WorkflowStoreSchemaOptions,
@@ -18,11 +21,18 @@ export function getCloudflareD1WorkflowStoreMigrations(
 
   return [
     {
-      id: cloudflareD1WorkflowStoreSchemaVersion,
+      id: '0000_workflow_store',
       name: 'Create TanStack Workflow Cloudflare D1 store tables',
       order: 0,
       statements,
       sql: `${statements.join(';\n\n')};\n`,
+    },
+    {
+      id: '0001_fair_timer_claims',
+      name: 'Fair timer claims',
+      order: 1,
+      statements: getCloudflareD1TimerFairnessStatements(options),
+      sql: `${getCloudflareD1TimerFairnessStatements(options).join(';\n\n')};\n`,
     },
   ]
 }
@@ -30,5 +40,7 @@ export function getCloudflareD1WorkflowStoreMigrations(
 export function getCloudflareD1WorkflowStoreMigrationSql(
   options?: CloudflareD1WorkflowStoreSchemaOptions,
 ): string {
-  return getCloudflareD1WorkflowStoreMigrations(options)[0]!.sql
+  return getCloudflareD1WorkflowStoreMigrations(options)
+    .map((migration) => migration.sql)
+    .join('\n')
 }

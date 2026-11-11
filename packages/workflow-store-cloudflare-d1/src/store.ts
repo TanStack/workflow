@@ -1,5 +1,6 @@
 import { LogConflictError } from '@tanstack/workflow-core'
 import {
+  getCloudflareD1TimerFairnessStatements,
   getCloudflareD1WorkflowStoreSchemaStatements,
   quoteIdent,
   resolveCloudflareD1WorkflowStoreTables,
@@ -29,6 +30,7 @@ import type {
   MarkScheduleBucketStartedArgs,
   ReadEventsArgs,
   ReleaseRunLeaseArgs,
+  ReleaseTimerLeaseArgs,
   RunClaim,
   RunId,
   RunSummary,
@@ -102,6 +104,20 @@ export function createCloudflareD1WorkflowStore(
       })) {
         await execute(db, statement)
       }
+      // Inspect this table, since custom stores may share a migration ledger.
+      const columns = await query<{ name: string }>(
+        db,
+        `pragma table_info(${tables.timers})`,
+      )
+      const hasClaimOrder = columns.some(
+        (column) => column.name === 'claim_order',
+      )
+      await executeMany(
+        db,
+        getCloudflareD1TimerFairnessStatements({ tables: tableNames })
+          .filter((_, index) => index !== 0 || !hasClaimOrder)
+          .map((sql) => statement(sql)),
+      )
     },
 
     async createRun(args: CreateRunArgs): Promise<CreateRunResult> {
@@ -525,54 +541,44 @@ export function createCloudflareD1WorkflowStore(
     },
 
     async claimDueTimers(args: ClaimDueTimersArgs) {
-      const due = await query<{ run_id: string; signal_id: string }>(
+      // One statement makes selection and every lease update atomic in D1.
+      const rows = await query<TimerRow>(
         db,
         `
-          select run_id, signal_id
-          from ${tables.timers}
-          where wake_at <= ?
-            and (
-              lease_owner is null
-              or lease_owner = ?
-              or lease_expires_at <= ?
-            )
-          order by wake_at asc, run_id asc, signal_id asc
+        update ${tables.timers}
+        set lease_owner = ?, lease_expires_at = ?,
+          claim_order = (select coalesce(max(claim_order), 0) + 1 from ${tables.timers})
+        where (run_id, signal_id) in (
+          select run_id, signal_id from ${tables.timers}
+          where wake_at <= ? and (lease_owner is null or lease_owner = ? or lease_expires_at <= ?)
+          order by claim_order asc, wake_at asc, run_id asc, signal_id asc
           limit ?
-        `,
-        [args.now, args.leaseOwner, args.now, args.limit],
-      )
-      const timers: Array<TimerWakeup> = []
-
-      for (const timer of due) {
-        const rows = await query<TimerRow>(
-          db,
-          `
-            update ${tables.timers}
-            set
-              lease_owner = ?,
-              lease_expires_at = ?
-            where run_id = ?
-              and signal_id = ?
-              and (
-                lease_owner is null
-                or lease_owner = ?
-                or lease_expires_at <= ?
-              )
-            returning *
-          `,
-          [
-            args.leaseOwner,
-            args.now + args.leaseMs,
-            timer.run_id,
-            timer.signal_id,
-            args.leaseOwner,
-            args.now,
-          ],
         )
-        if (rows[0]) timers.push(timerFromRow(rows[0]))
-      }
+        returning *
+      `,
+        [
+          args.leaseOwner,
+          args.now + args.leaseMs,
+          args.now,
+          args.leaseOwner,
+          args.now,
+          args.limit,
+        ],
+      )
+      return rows.map(timerFromRow)
+    },
 
-      return timers
+    async releaseTimerLease(args: ReleaseTimerLeaseArgs) {
+      await query(
+        db,
+        `
+        update ${tables.timers}
+        set lease_owner = null, lease_expires_at = null
+        where run_id = ? and signal_id = ? and lease_owner = ? and lease_expires_at = ?
+        returning run_id
+      `,
+        [args.runId, args.signalId, args.leaseOwner, args.leaseExpiresAt],
+      )
     },
 
     async deliverSignal<TPayload>(
@@ -917,6 +923,7 @@ export function createCloudflareD1WorkflowStore(
 }
 
 interface TableSqls {
+  schemaMigrations: string
   runs: string
   runStates: string
   eventLocks: string
@@ -1004,6 +1011,7 @@ interface Statement {
 
 function tableSqls(tables: CloudflareD1WorkflowStoreTables): TableSqls {
   return {
+    schemaMigrations: quoteIdent(tables.schemaMigrations),
     runs: quoteIdent(tables.runs),
     runStates: quoteIdent(tables.runStates),
     eventLocks: quoteIdent(tables.eventLocks),

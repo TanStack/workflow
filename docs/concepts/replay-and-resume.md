@@ -106,6 +106,10 @@ On resume the engine reads `RunState.workflowVersion` and routes to the matching
 
 Mismatched version with nothing in `previousVersions` → `RUN_ERRORED { code: 'workflow_version_mismatch' }`.
 
+When the run is driven through `@tanstack/workflow-runtime`, signal, approval, and timer deliveries to such a run are rejected before they are consumed: the result kind is `version-mismatch` and the run stays `paused`, so restoring the missing version lets the same delivery resume it.
+
+A rejected signal or approval payload is not stored by the runtime. Keep it in a durable inbox or return a retryable HTTP response, such as 503, to a sender that retries. Retry with the same signal ID or approval ID after restoring the missing workflow version. The Cloudflare D1 payment example returns 503 for this case.
+
 ## Attach (read-only subscribe)
 
 A second subscriber (browser refresh, mobile reconnect) reads current state without driving the run forward:
